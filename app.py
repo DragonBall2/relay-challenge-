@@ -175,6 +175,9 @@ def login():
         return redirect(url_for('index'))
 
     if runner.status == 'completed':
+        if runner.password != password:
+            flash('비밀번호가 일치하지 않습니다.', 'danger')
+            return redirect(url_for('index'))
         session['runner_id'] = runner.id
         return redirect(url_for('success'))
 

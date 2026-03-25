@@ -1,7 +1,7 @@
 import os
 import secrets
 
-SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+SECRET_KEY = os.environ.get('SECRET_KEY', 'relay-challenge-2026-secret-key')
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATABASE_PATH = os.path.join(BASE_DIR, 'relay.db')
@@ -16,5 +16,6 @@ CHALLENGE_DATA_PATH = os.path.join(BASE_DIR, 'challenge_data.txt')
 NUM_GROUPS = 10
 PARTICIPANTS_PER_GROUP = 13
 
+SESSION_COOKIE_NAME = 'relay_session'
 SESSION_COOKIE_SAMESITE = 'Lax'
 PERMANENT_SESSION_LIFETIME = 28800  # 8 hours in seconds
