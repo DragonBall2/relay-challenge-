@@ -1,0 +1,290 @@
+/* Samsung-inspired theme */
+:root {
+    --samsung-blue: #1428A0;
+    --samsung-blue-light: #4169E1;
+    --samsung-blue-dark: #0D1B6F;
+    --bg-dark: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent-green: #22c55e;
+    --accent-yellow: #eab308;
+    --accent-red: #ef4444;
+    --accent-orange: #f97316;
+    --gold: #FFD700;
+    --silver: #C0C0C0;
+    --bronze: #CD7F32;
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+}
+
+/* Navbar */
+.navbar {
+    background: linear-gradient(135deg, var(--samsung-blue-dark), var(--samsung-blue)) !important;
+    box-shadow: 0 2px 20px rgba(20, 40, 160, 0.3);
+}
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: -0.5px;
+}
+
+/* Cards */
+.card {
+    background-color: var(--bg-card);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+}
+.card-header {
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px 16px 0 0 !important;
+}
+
+/* Stat cards */
+.stat-card {
+    background: linear-gradient(135deg, var(--samsung-blue), var(--samsung-blue-light));
+    border: none;
+    border-radius: 16px;
+    padding: 1.5rem;
+    text-align: center;
+    color: white;
+}
+.stat-card .stat-number {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-top: 0.3rem;
+}
+
+/* Login form */
+.login-card {
+    max-width: 450px;
+    margin: 0 auto;
+}
+.form-control {
+    background-color: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text-primary);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+}
+.form-control:focus {
+    background-color: rgba(255,255,255,0.1);
+    color: var(--text-primary);
+    border-color: var(--samsung-blue-light);
+    box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.25);
+}
+.form-control::placeholder {
+    color: var(--text-secondary);
+}
+.form-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+/* Buttons */
+.btn-samsung {
+    background: linear-gradient(135deg, var(--samsung-blue), var(--samsung-blue-light));
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0.7rem 2rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.btn-samsung:hover {
+    background: linear-gradient(135deg, var(--samsung-blue-light), #5b8af7);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(65, 105, 225, 0.4);
+}
+
+/* Progress bars */
+.progress {
+    background-color: rgba(255,255,255,0.08);
+    border-radius: 10px;
+    height: 24px;
+}
+.progress-bar {
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    transition: width 0.5s ease;
+}
+
+/* Leaderboard table */
+.table-dark-custom {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-primary);
+}
+.table-dark-custom th {
+    background: rgba(255,255,255,0.05);
+    border-bottom: 2px solid rgba(255,255,255,0.1);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    padding: 0.8rem;
+}
+.table-dark-custom td {
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding: 0.8rem;
+    vertical-align: middle;
+}
+.table-dark-custom tbody tr:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+/* Rank badges */
+.rank-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1rem;
+}
+.rank-1 { background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; }
+.rank-2 { background: linear-gradient(135deg, #C0C0C0, #A0A0A0); color: #000; }
+.rank-3 { background: linear-gradient(135deg, #CD7F32, #A0522D); color: #fff; }
+.rank-other { background: rgba(255,255,255,0.1); color: var(--text-secondary); }
+
+/* Status badges */
+.badge-status {
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.badge-waiting { background: rgba(148,163,184,0.2); color: var(--text-secondary); }
+.badge-active { background: rgba(34,197,94,0.2); color: var(--accent-green); border: 1px solid rgba(34,197,94,0.3); }
+.badge-completed { background: rgba(65,105,225,0.2); color: var(--samsung-blue-light); }
+.badge-skipped { background: rgba(249,115,22,0.2); color: var(--accent-orange); }
+
+/* Problem text */
+.problem-text {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 1.5rem;
+    font-family: 'D2Coding', 'Consolas', monospace;
+    font-size: 0.95rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    color: #e2e8f0;
+}
+
+/* Password display */
+.password-display {
+    background: linear-gradient(135deg, rgba(34,197,94,0.1), rgba(34,197,94,0.05));
+    border: 2px solid var(--accent-green);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+}
+.password-display .password-value {
+    font-family: 'D2Coding', 'Consolas', monospace;
+    font-size: 2.5rem;
+    font-weight: 800;
+    letter-spacing: 6px;
+    color: var(--accent-green);
+    user-select: all;
+}
+
+/* Prize section */
+.prize-card {
+    border-radius: 16px;
+    padding: 1rem;
+    text-align: center;
+}
+.prize-gold { background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,165,0,0.1)); border: 1px solid rgba(255,215,0,0.3); }
+.prize-silver { background: linear-gradient(135deg, rgba(192,192,192,0.15), rgba(160,160,160,0.1)); border: 1px solid rgba(192,192,192,0.3); }
+.prize-bronze { background: linear-gradient(135deg, rgba(205,127,50,0.15), rgba(160,82,45,0.1)); border: 1px solid rgba(205,127,50,0.3); }
+
+/* Hero section */
+.hero {
+    padding: 3rem 0 2rem;
+    text-align: center;
+}
+.hero h1 {
+    font-weight: 800;
+    font-size: 2.2rem;
+    background: linear-gradient(135deg, #fff, var(--samsung-blue-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.hero p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+}
+
+/* Success animation */
+.success-icon {
+    font-size: 5rem;
+    animation: bounce 0.6s ease-out;
+}
+@keyframes bounce {
+    0% { transform: scale(0); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+/* Group finished celebration */
+.celebration {
+    background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,165,0,0.05));
+    border: 2px solid var(--gold);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    animation: glow 2s ease-in-out infinite alternate;
+}
+@keyframes glow {
+    from { box-shadow: 0 0 10px rgba(255,215,0,0.2); }
+    to { box-shadow: 0 0 30px rgba(255,215,0,0.4); }
+}
+
+/* Admin table */
+.admin-table td { font-size: 0.85rem; }
+.admin-table .btn-sm { font-size: 0.75rem; padding: 0.2rem 0.5rem; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hero h1 { font-size: 1.6rem; }
+    .stat-card .stat-number { font-size: 1.8rem; }
+    .password-display .password-value { font-size: 1.8rem; letter-spacing: 3px; }
+}
+
+/* Flash messages */
+.flash-container {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    z-index: 1050;
+    max-width: 400px;
+}
+.flash-container .alert {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    animation: slideIn 0.3s ease-out;
+}
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}

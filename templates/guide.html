@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}설치 가이드{% endblock %}
+
+{% block content %}
+<div class="hero" style="padding: 2rem 0 1.5rem;">
+    <h1>코딩 에이전트 설치 가이드</h1>
+    <p>Roo Code 또는 Open Code 중 하나를 선택하여 설치하세요</p>
+</div>
+
+<div class="row g-4">
+    <!-- Roo Code -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header py-3">
+                <h4 class="mb-0" style="font-weight: 700;">Roo Code <span class="badge bg-primary">추천</span></h4>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-secondary);">VS Code 확장 프로그램으로 설치하는 코딩 에이전트</p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">설치 방법</h6>
+                <ol style="color: var(--text-secondary); line-height: 2;">
+                    <li>VS Code를 실행합니다</li>
+                    <li>Extensions (<code>Ctrl+Shift+X</code>) 을 엽니다</li>
+                    <li><code>Roo Code</code>를 검색하고 Install을 클릭합니다</li>
+                    <li>사이드바에서 Roo Code 아이콘을 클릭하여 활성화합니다</li>
+                    <li>API Provider 설정에서 <strong>Codemate</strong>에서 발급한 Access Token을 입력합니다</li>
+                </ol>
+
+                <h6 style="font-weight: 700; color: var(--accent-yellow); margin-top: 1.5rem;">참고 링크</h6>
+                <ul style="list-style: none; padding: 0;">
+                    <li class="mb-2">
+                        <a href="https://github.samsungds.net/pages/CodeAssistant/Roo-Code-Docs/getting-started/installing"
+                           target="_blank" style="color: var(--samsung-blue-light);">
+                            Roo Code 설치 문서
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://codemate.samsungds.net/"
+                           target="_blank" style="color: var(--samsung-blue-light);">
+                            Codemate (Access Token 발급)
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open Code -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header py-3">
+                <h4 class="mb-0" style="font-weight: 700;">Open Code</h4>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-secondary);">터미널 기반 코딩 에이전트</p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">설치 방법</h6>
+                <ol style="color: var(--text-secondary); line-height: 2;">
+                    <li>터미널을 엽니다</li>
+                    <li>다음 명령어로 설치합니다:
+                        <div class="problem-text" style="padding: 0.5rem 1rem; margin: 0.5rem 0; font-size: 0.85rem;">npm install -g @anthropic-ai/opencode</div>
+                    </li>
+                    <li>또는 직접 실행:
+                        <div class="problem-text" style="padding: 0.5rem 1rem; margin: 0.5rem 0; font-size: 0.85rem;">npx @anthropic-ai/opencode</div>
+                    </li>
+                    <li><strong>Codemate</strong>에서 발급한 Access Token으로 API 키를 설정합니다</li>
+                </ol>
+
+                <h6 style="font-weight: 700; color: var(--accent-yellow); margin-top: 1.5rem;">참고 링크</h6>
+                <ul style="list-style: none; padding: 0;">
+                    <li class="mb-2">
+                        <a href="https://github.samsungds.net/pages/CodeAssistant/Open-Code-Docs/"
+                           target="_blank" style="color: var(--samsung-blue-light);">
+                            Open Code 설치 문서
+                        </a>
+                    </li>
+                    <li>
+                        <a href="https://codemate.samsungds.net/"
+                           target="_blank" style="color: var(--samsung-blue-light);">
+                            Codemate (Access Token 발급)
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 챌린지 진행 가이드 -->
+<div class="card mt-4">
+    <div class="card-header py-3">
+        <h4 class="mb-0" style="font-weight: 700;">챌린지 진행 방법</h4>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6 style="font-weight: 700; color: var(--accent-green);">1. 코딩 에이전트 설치</h6>
+                <p style="color: var(--text-secondary);">위 가이드를 참고하여 Roo Code 또는 Open Code를 설치합니다.</p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">2. challenge_data.txt 다운로드</h6>
+                <p style="color: var(--text-secondary);">
+                    <a href="{{ url_for('download_challenge_data') }}" style="color: var(--samsung-blue-light);">여기</a>에서
+                    데이터 파일을 다운로드하여 작업 폴더에 저장합니다.
+                </p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">3. 사이트 로그인</h6>
+                <p style="color: var(--text-secondary);">
+                    이전 주자에게 받은 비밀번호와 본인의 Knox-ID로 로그인합니다.
+                </p>
+            </div>
+            <div class="col-md-6">
+                <h6 style="font-weight: 700; color: var(--accent-green);">4. 문제 풀기</h6>
+                <p style="color: var(--text-secondary);">
+                    표시된 문제를 코딩 에이전트에 그대로 입력하면, 에이전트가 challenge_data.txt를 분석하는 코드를 작성하고 실행하여 답을 알려줍니다.
+                </p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">5. 답안 제출</h6>
+                <p style="color: var(--text-secondary);">
+                    에이전트가 알려준 답을 사이트에 제출합니다. 틀리면 횟수 제한 없이 재시도 가능합니다.
+                </p>
+
+                <h6 style="font-weight: 700; color: var(--accent-green);">6. 바톤 터치!</h6>
+                <p style="color: var(--text-secondary);">
+                    정답 제출 후 표시되는 다음 주자 정보와 비밀번호를 전달하고, 설치를 도와주세요.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

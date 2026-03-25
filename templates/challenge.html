@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}챌린지 문제 - {{ runner.name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- 참가자 정보 -->
+        <div class="card mb-4">
+            <div class="card-body d-flex justify-content-between align-items-center py-3">
+                <div>
+                    <span style="font-weight: 700; font-size: 1.1rem;">{{ runner.name }}</span>
+                    <span style="color: var(--text-secondary); margin-left: 0.5rem;">{{ runner.knox_id }}</span>
+                </div>
+                <div class="text-end">
+                    <span class="badge-status badge-active">{{ runner.group.name }} - {{ runner.run_order }}번째 주자</span>
+                    <span style="color: var(--text-secondary); font-size: 0.8rem; display: block; margin-top: 0.3rem;">
+                        문제 유형: Type {{ runner.problem_type }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 안내 -->
+        <div class="alert" style="background: rgba(65,105,225,0.1); border: 1px solid rgba(65,105,225,0.3); color: var(--samsung-blue-light); border-radius: 12px;" role="alert">
+            <strong>풀이 방법:</strong> 아래 문제를 코딩 에이전트(Roo Code / Open Code)에 그대로 입력하세요.
+            에이전트가 challenge_data.txt를 분석하는 코드를 작성하고 실행하여 답을 알려줍니다.
+            <br>
+            <a href="{{ url_for('download_challenge_data') }}" style="color: var(--accent-green);">
+                challenge_data.txt 다운로드가 필요하면 여기를 클릭하세요.
+            </a>
+        </div>
+
+        <!-- 문제 -->
+        <div class="card mb-4">
+            <div class="card-header py-3">
+                <h5 class="mb-0" style="font-weight: 700;">문제</h5>
+            </div>
+            <div class="card-body">
+                <div class="problem-text">{{ runner.problem_text }}</div>
+            </div>
+        </div>
+
+        <!-- 답안 제출 -->
+        <div class="card">
+            <div class="card-header py-3">
+                <h5 class="mb-0" style="font-weight: 700;">답안 제출</h5>
+            </div>
+            <div class="card-body">
+                {% if runner.attempts > 0 %}
+                <div class="mb-3" style="color: var(--text-secondary); font-size: 0.85rem;">
+                    시도 횟수: {{ runner.attempts }}회
+                    {% if runner.submitted_answer %}
+                    | 마지막 제출: <code>{{ runner.submitted_answer }}</code>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('submit') }}">
+                    <div class="mb-3">
+                        <input type="text" class="form-control form-control-lg" name="answer"
+                               placeholder="답을 입력하세요" required autocomplete="off"
+                               autofocus style="font-family: 'D2Coding', Consolas, monospace;">
+                    </div>
+                    <button type="submit" class="btn btn-samsung w-100 py-2" style="font-size: 1.1rem;">
+                        제출하기
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
