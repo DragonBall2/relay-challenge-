@@ -6,6 +6,9 @@ challenge_data.dat
 challenge_admin.xlsx
 firstPlayer.txt
 
+# 환경변수
+.env
+
 # Python
 __pycache__/
 *.pyc
