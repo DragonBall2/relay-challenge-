@@ -20,7 +20,6 @@ class Runner(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('groups.id'), nullable=False)
     run_order = db.Column(db.Integer, nullable=False)
     password = db.Column(db.String(20), nullable=False)
-    personal_pin = db.Column(db.String(6), nullable=False)  # 본인만 아는 개인 PIN
 
     problem_text = db.Column(db.Text, nullable=False)
     problem_type = db.Column(db.String(5), nullable=False)

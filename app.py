@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, send_file, jsonify, abort)
+                   session, flash, send_file, jsonify, abort, make_response)
 from models import db, Group, Runner, AttemptLog
 import config
 
@@ -157,10 +157,9 @@ def index():
 def login():
     knox_id = request.form.get('knox_id', '').strip()
     password = request.form.get('password', '').strip()
-    pin = request.form.get('pin', '').strip()
 
-    if not knox_id or not password or not pin:
-        flash('Knox-ID, 비밀번호, 개인 PIN을 모두 입력하세요.', 'danger')
+    if not knox_id or not password:
+        flash('Knox-ID와 비밀번호를 모두 입력하세요.', 'danger')
         return redirect(url_for('index'))
 
     runner = Runner.query.filter(
@@ -176,10 +175,6 @@ def login():
         return redirect(url_for('index'))
 
     if runner.status == 'completed':
-        # 이미 완료한 사람은 결과 페이지로 (PIN 확인 후)
-        if runner.personal_pin != pin:
-            flash('개인 PIN이 일치하지 않습니다.', 'danger')
-            return redirect(url_for('index'))
         session['runner_id'] = runner.id
         return redirect(url_for('success'))
 
@@ -191,8 +186,11 @@ def login():
         flash('비밀번호가 일치하지 않습니다.', 'danger')
         return redirect(url_for('index'))
 
-    if runner.personal_pin != pin:
-        flash('개인 PIN이 일치하지 않습니다.', 'danger')
+    # 디바이스 쿠키 체크: 이 브라우저에서 다른 사람이 이미 풀었는지 확인
+    device_owner = request.cookies.get('device_completed_by')
+    if device_owner and device_owner != knox_id.lower():
+        flash('이 PC(브라우저)에서 이미 다른 참가자가 문제를 풀었습니다. '
+              '본인의 PC에서 접속해 주세요.', 'danger')
         return redirect(url_for('index'))
 
     # 로그인 성공
@@ -250,7 +248,11 @@ def submit():
         runner.submitted_answer = submitted
         _activate_next_runner(runner)
         db.session.commit()
-        return redirect(url_for('success'))
+        # 디바이스 쿠키 설정: 이 브라우저를 이 사용자에게 귀속
+        resp = make_response(redirect(url_for('success')))
+        resp.set_cookie('device_completed_by', runner.knox_id.lower(),
+                        max_age=60*60*24, httponly=True, samesite='Lax')
+        return resp
     else:
         runner.submitted_answer = submitted
         db.session.commit()
