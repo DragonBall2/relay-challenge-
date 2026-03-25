@@ -97,10 +97,12 @@ def init_database():
 
         # 4. 조 생성 및 참가자 배정
         first_player_lines = []
+        group_roster = {}  # 조별 주자 순서 기록
 
         for g in range(NUM_GROUPS):
             group = Group(id=g + 1, name=f"조 {g + 1}")
             db.session.add(group)
+            group_roster[g + 1] = []
 
             start = g * PARTICIPANTS_PER_GROUP
             end = start + PARTICIPANTS_PER_GROUP
@@ -134,6 +136,13 @@ def init_database():
                 )
                 db.session.add(runner)
 
+                group_roster[g + 1].append({
+                    'order': order,
+                    'name': member['name'],
+                    'knox_id': member['knox_id'],
+                    'answer': problem.answer,
+                })
+
         db.session.commit()
         print(f"\n{NUM_GROUPS}개 조, {TOTAL_PARTICIPANTS}명 배정 완료")
 
@@ -149,12 +158,33 @@ def init_database():
             f.write("이 비밀번호를 각 조의 첫 번째 주자에게 전달하세요.\n")
         print(f"\nfirstPlayer.txt 생성 완료")
 
-        # 6. 요약 출력
+        # 6. groupRoster.txt 생성 (조별 전체 주자 순서 + 정답)
+        roster_path = os.path.join(BASE_DIR, 'groupRoster.txt')
+        with open(roster_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("코딩 에이전트 릴레이 챌린지 - 조별 주자 순서 (비상용)\n")
+            f.write("=" * 80 + "\n")
+            f.write("※ 시스템 장애 시 이 파일을 보고 수동으로 진행할 수 있습니다.\n")
+            f.write("※ 정답이 포함되어 있으므로 참가자에게 공유하지 마세요.\n")
+            f.write("=" * 80 + "\n\n")
+            for g_id, members in group_roster.items():
+                f.write(f"[ 조 {g_id} ]\n")
+                f.write(f"{'순서':>4}  {'이름':<20}  {'Knox-ID':<20}  {'정답'}\n")
+                f.write("-" * 70 + "\n")
+                for m in members:
+                    f.write(f"{m['order']:>4}  {m['name']:<20}  {m['knox_id']:<20}  {m['answer']}\n")
+                f.write("\n")
+            f.write("=" * 80 + "\n")
+        print(f"groupRoster.txt 생성 완료")
+
+        # 7. 요약 출력
         print("\n" + "=" * 60)
         print("초기화 완료 요약")
         print("=" * 60)
         for line in first_player_lines:
             print(f"  {line}")
+        print(f"\n[조별 주자 순서] groupRoster.txt에 저장됨")
+        print("  → 시스템 장애 시 수동 진행용 (정답 포함)")
         print("=" * 60)
 
 

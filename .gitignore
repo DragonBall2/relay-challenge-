@@ -5,6 +5,7 @@ relay.db
 challenge_data.dat
 challenge_admin.xlsx
 firstPlayer.txt
+groupRoster.txt
 
 # 환경변수
 .env
