@@ -15,7 +15,7 @@ echo ""
 echo "[1/4] Python 패키지 설치..."
 pip install Flask Flask-SQLAlchemy openpyxl waitress
 
-# 2. challenge_data.txt 생성
+# 2. challenge_data.dat 생성
 echo ""
 echo "[2/4] 챌린지 데이터 파일 생성..."
 python generate_challenge.py
@@ -36,7 +36,7 @@ echo "[4/4] 세팅 완료!"
 echo "=========================================="
 echo ""
 echo "생성된 파일:"
-echo "  - challenge_data.txt  (참가자 배포용 데이터)"
+echo "  - challenge_data.dat  (참가자 배포용 데이터)"
 echo "  - relay.db            (데이터베이스)"
 echo "  - firstPlayer.txt     (1번 주자 비밀번호)"
 echo "  - challenge_admin.xlsx (오프라인 백업용)"

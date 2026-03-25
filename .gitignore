@@ -2,7 +2,7 @@
 relay.db
 
 # 생성 파일 (서버에서 새로 생성)
-challenge_data.txt
+challenge_data.dat
 challenge_admin.xlsx
 firstPlayer.txt
 

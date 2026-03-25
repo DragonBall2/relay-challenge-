@@ -509,7 +509,7 @@ def generate_type_a_problems(log_entries, n=PROBLEMS_PER_TYPE):
         t1_str = t1.strftime("%Y-%m-%d")
         t2_str = t2.strftime("%Y-%m-%d")
 
-        text = (f"challenge_data.txt 파일에서 다음 조건의 로그 항목을 찾으세요:\n"
+        text = (f"challenge_data.dat 파일에서 다음 조건의 로그 항목을 찾으세요:\n"
                 f"- 로그 레벨: {level}\n"
                 f"- 모듈: {module}\n"
                 f"- 기간: {t1_str} ~ {t2_str}\n"
@@ -569,7 +569,7 @@ def generate_type_b_problems(json_records, log_entries, n=PROBLEMS_PER_TYPE):
             continue
         used_answers.add(answer)
 
-        text = (f"challenge_data.txt 파일에서 2단계 분석을 수행하세요:\n"
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
                 f"[1단계] JSON_BLOCK 섹션들에서 department가 \"{dept}\"이고 status가 \"{status}\"인 직원들의 employee_id를 수집하세요.\n"
                 f"[2단계] LOG_SECTION 섹션들에서 위 employee_id에 해당하면서 로그 레벨이 {level}인 항목들을 찾으세요.\n"
                 f"해당 항목들의 duration 값을 모두 합산하세요.\n"
@@ -634,7 +634,7 @@ def generate_type_c_problems(csv_rows, n=PROBLEMS_PER_TYPE):
         agg_kr = "합계" if agg == "sum" else "평균"
         col_display = col.replace("_", " ").upper()
 
-        text = (f"challenge_data.txt 파일에서 CSV 테이블을 분석하세요:\n"
+        text = (f"challenge_data.dat 파일에서 CSV 테이블을 분석하세요:\n"
                 f"- 대상 테이블: table_id가 \"{tbl_prefix}\"로 시작하는 모든 CSV_TABLE\n"
                 f"- 필터 조건: category가 \"{cat}\"이고 region이 \"{region}\"인 행\n"
                 f"- 빈 값은 제외하세요\n"
@@ -694,7 +694,7 @@ def generate_type_d_problems(code_data, n=PROBLEMS_PER_TYPE):
             continue
         used_answers.add(answer)
 
-        text = (f"challenge_data.txt 파일에서 코드 블록을 분석하세요:\n"
+        text = (f"challenge_data.dat 파일에서 코드 블록을 분석하세요:\n"
                 f"- 대상: 언어 태그가 [{lang}]인 모든 CODE_BLOCK\n"
                 f"- 분석 1: 해당 블록들의 코드 라인 중 \"{keyword}\"를 포함하는 라인의 수 (A)\n"
                 f"- 분석 2: 해당 블록들에서 정의된 고유한 함수/메서드 이름의 수 (B)\n"
@@ -753,7 +753,7 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
         sort_kr = "metric (오름차순, 숫자)" if sort_field == "metric" else "priority (오름차순, 알파벳)"
         attr_kr = {"ref": "ref(직원 ID)", "metric": "metric 값", "entry_id": "entry_id"}[return_attr]
 
-        text = (f"challenge_data.txt 파일에서 레지스트리 항목을 분석하세요:\n"
+        text = (f"challenge_data.dat 파일에서 레지스트리 항목을 분석하세요:\n"
                 f"- 대상: 모든 REGISTRY 섹션에서 tag={tag}인 항목을 수집\n"
                 f"- 정렬: {sort_kr}\n"
                 f"- 결과: 정렬 후 {nth}번째 항목의 {attr_kr}를 제출하세요\n"
@@ -884,8 +884,8 @@ def create_excel(all_problems, filename="challenge_admin.xlsx"):
         ["방식", "릴레이 - 첫 번째 사람이 설치 후 다음 사람에게 설치 방법을 전수"],
         ["", ""],
         ["[사전 준비]", ""],
-        ["1", "generate_challenge.py를 실행하여 challenge_data.txt와 이 엑셀 파일 생성"],
-        ["2", "challenge_data.txt를 참가자 전원에게 배포 (공유 드라이브, Slack 등)"],
+        ["1", "generate_challenge.py를 실행하여 challenge_data.dat와 이 엑셀 파일 생성"],
+        ["2", "challenge_data.dat를 참가자 전원에게 배포 (공유 드라이브, Slack 등)"],
         ["3", "각 참가자에게 참가자번호(1~130) 할당"],
         ["4", "'문제카드 배포용' 시트에서 각자의 문제를 확인하도록 안내"],
         ["", ""],
@@ -902,7 +902,7 @@ def create_excel(all_problems, filename="challenge_admin.xlsx"):
         ["", ""],
         ["[챌린지 진행]", ""],
         ["1", "코딩 에이전트를 설치합니다"],
-        ["2", "challenge_data.txt를 작업 폴더에 저장합니다"],
+        ["2", "challenge_data.dat를 작업 폴더에 저장합니다"],
         ["3", "코딩 에이전트에게 자신의 문제를 그대로 입력합니다"],
         ["4", "에이전트가 코드를 작성하고 실행하여 답을 알려줍니다"],
         ["5", "답을 운영자에게 제출합니다"],
@@ -1017,9 +1017,9 @@ def main():
     print(f"  - 메타데이터: {len(meta_sections)} dumps")
 
     # 2. 파일 조립
-    print("\n[3/6] challenge_data.txt 생성...")
+    print("\n[3/6] challenge_data.dat 생성...")
     file_content = assemble_challenge_file(all_sections)
-    with open("challenge_data.txt", "w", encoding="utf-8") as f:
+    with open("challenge_data.dat", "w", encoding="utf-8") as f:
         f.write(file_content)
     line_count = file_content.count("\n") + 1
     file_size = len(file_content.encode("utf-8"))
@@ -1079,11 +1079,11 @@ def main():
     print("\n[6/6] 완료!")
     print("=" * 60)
     print("생성된 파일:")
-    print(f"  1. challenge_data.txt  ({line_count:,} 줄, {file_size / 1024:.1f} KB)")
+    print(f"  1. challenge_data.dat  ({line_count:,} 줄, {file_size / 1024:.1f} KB)")
     print(f"  2. challenge_admin.xlsx (4개 시트)")
     print("=" * 60)
     print("\n사용 방법:")
-    print("  1. challenge_data.txt를 참가자에게 배포")
+    print("  1. challenge_data.dat를 참가자에게 배포")
     print("  2. challenge_admin.xlsx의 '문제카드 배포용' 시트에서 각자 문제 확인")
     print("  3. 참가자가 코딩 에이전트로 문제를 풀고 답 제출")
     print("  4. '마스터 답안지' 시트의 F열에 제출답안 입력 → G열에서 자동 판정")

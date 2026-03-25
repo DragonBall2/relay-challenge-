@@ -11,7 +11,7 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'challenge2026!')
 
-CHALLENGE_DATA_PATH = os.path.join(BASE_DIR, 'challenge_data.txt')
+CHALLENGE_DATA_PATH = os.path.join(BASE_DIR, 'challenge_data.dat')
 
 NUM_GROUPS = 10
 PARTICIPANTS_PER_GROUP = 13

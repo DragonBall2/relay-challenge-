@@ -308,7 +308,7 @@ def download_challenge_data():
     path = config.CHALLENGE_DATA_PATH
     if not os.path.exists(path):
         abort(404)
-    return send_file(path, as_attachment=True, download_name='challenge_data.txt')
+    return send_file(path, as_attachment=True, download_name='challenge_data.dat')
 
 
 @app.route('/api/leaderboard')
