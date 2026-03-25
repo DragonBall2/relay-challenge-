@@ -5,6 +5,7 @@ relay.db
 challenge_data.txt
 challenge_admin.xlsx
 firstPlayer.txt
+personalPIN.txt
 
 # Python
 __pycache__/

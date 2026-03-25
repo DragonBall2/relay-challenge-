@@ -26,6 +26,11 @@ def generate_password(length=8):
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
+def generate_pin(length=4):
+    """개인 PIN 생성 (숫자 4자리)."""
+    return ''.join(secrets.choice(string.digits) for _ in range(length))
+
+
 def load_participants_from_csv(path):
     """CSV에서 참가자 목록을 읽어옵니다. 컬럼: knox_id, name"""
     participants = []
@@ -98,6 +103,7 @@ def init_database():
 
         # 4. 조 생성 및 참가자 배정
         first_player_lines = []
+        all_pin_lines = []
 
         for g in range(NUM_GROUPS):
             group = Group(id=g + 1, name=f"조 {g + 1}")
@@ -110,6 +116,7 @@ def init_database():
             for order, member in enumerate(group_members, 1):
                 problem_idx = g * PARTICIPANTS_PER_GROUP + (order - 1)
                 problem = problems[problem_idx]
+                pin = generate_pin()
 
                 # 첫 번째 주자는 초기 비밀번호 생성, status='active'
                 if order == 1:
@@ -128,12 +135,17 @@ def init_database():
                     group_id=g + 1,
                     run_order=order,
                     password=password,
+                    personal_pin=pin,
                     problem_text=problem.text,
                     problem_type=problem.ptype,
                     correct_answer=problem.answer,
                     status=status,
                 )
                 db.session.add(runner)
+
+                all_pin_lines.append(
+                    f"조 {g + 1} | {order:2d}번 | {member['name']:20s} | {member['knox_id']:20s} | PIN: {pin}"
+                )
 
         db.session.commit()
         print(f"\n{NUM_GROUPS}개 조, {TOTAL_PARTICIPANTS}명 배정 완료")
@@ -150,12 +162,29 @@ def init_database():
             f.write("이 비밀번호를 각 조의 첫 번째 주자에게 전달하세요.\n")
         print(f"\nfirstPlayer.txt 생성 완료")
 
-        # 6. 요약 출력
+        # 6. personalPIN.txt 생성 (사전 배포용)
+        pin_path = os.path.join(BASE_DIR, 'personalPIN.txt')
+        with open(pin_path, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write("코딩 에이전트 릴레이 챌린지 - 개인 PIN 목록\n")
+            f.write("=" * 80 + "\n")
+            f.write("※ 각 참가자에게 본인의 PIN만 개별 전달하세요.\n")
+            f.write("※ PIN은 로그인 시 본인 확인용으로 사용됩니다.\n")
+            f.write("=" * 80 + "\n\n")
+            for line in all_pin_lines:
+                f.write(line + "\n")
+            f.write("\n" + "=" * 80 + "\n")
+        print(f"personalPIN.txt 생성 완료")
+
+        # 7. 요약 출력
         print("\n" + "=" * 60)
         print("초기화 완료 요약")
         print("=" * 60)
+        print("\n[첫 번째 주자 비밀번호]")
         for line in first_player_lines:
             print(f"  {line}")
+        print(f"\n[개인 PIN] personalPIN.txt에 {len(all_pin_lines)}명분 저장됨")
+        print("  → 각 참가자에게 본인 PIN만 개별 전달 필요")
         print("=" * 60)
 
 

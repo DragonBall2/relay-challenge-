@@ -157,9 +157,10 @@ def index():
 def login():
     knox_id = request.form.get('knox_id', '').strip()
     password = request.form.get('password', '').strip()
+    pin = request.form.get('pin', '').strip()
 
-    if not knox_id or not password:
-        flash('Knox-ID와 비밀번호를 모두 입력하세요.', 'danger')
+    if not knox_id or not password or not pin:
+        flash('Knox-ID, 비밀번호, 개인 PIN을 모두 입력하세요.', 'danger')
         return redirect(url_for('index'))
 
     runner = Runner.query.filter(
@@ -175,7 +176,10 @@ def login():
         return redirect(url_for('index'))
 
     if runner.status == 'completed':
-        # 이미 완료한 사람은 결과 페이지로
+        # 이미 완료한 사람은 결과 페이지로 (PIN 확인 후)
+        if runner.personal_pin != pin:
+            flash('개인 PIN이 일치하지 않습니다.', 'danger')
+            return redirect(url_for('index'))
         session['runner_id'] = runner.id
         return redirect(url_for('success'))
 
@@ -185,6 +189,10 @@ def login():
 
     if runner.password != password:
         flash('비밀번호가 일치하지 않습니다.', 'danger')
+        return redirect(url_for('index'))
+
+    if runner.personal_pin != pin:
+        flash('개인 PIN이 일치하지 않습니다.', 'danger')
         return redirect(url_for('index'))
 
     # 로그인 성공
