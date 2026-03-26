@@ -44,6 +44,9 @@
                     <p style="font-size: 1.3rem; font-weight: 700;">
                         {{ next_runner.name }}
                     </p>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Knox ID: <strong style="color: var(--text-primary);">{{ next_runner.knox_id }}</strong>
+                    </p>
                     <p style="color: var(--text-secondary); font-size: 0.85rem;">
                         {{ runner.group.name }} - {{ next_runner.run_order }}번째 주자
                     </p>
@@ -65,7 +68,7 @@
                         <li>다음 주자 <strong>{{ next_runner.name }}</strong>에게 연락하세요</li>
                         <li>코딩 에이전트(Roo Code / Open Code) 설치를 도와주세요</li>
                         <li>위 <strong>접속 비밀번호</strong>를 알려주세요</li>
-                        <li>개인 PIN은 본인만 알고 있으므로 비밀번호만 전달하면 됩니다</li>
+                        <li>위 <strong>Knox ID</strong>와 <strong>접속 비밀번호</strong>를 함께 알려주세요</li>
                         <li>다음 주자가 사이트에 접속하여 문제를 풀 수 있도록 안내하세요</li>
                     </ol>
                 </div>
