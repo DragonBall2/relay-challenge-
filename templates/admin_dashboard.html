@@ -106,6 +106,10 @@
                         </td>
                         <td>
                             {% if runner.status in ('waiting', 'active') %}
+                            <form method="POST" action="{{ url_for('admin_defer', runner_id=runner.id) }}" class="d-inline"
+                                  onsubmit="return confirm('{{ runner.name }}을(를) 맨 뒤로 미루시겠습니까?');">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">뒤로 미루기</button>
+                            </form>
                             <form method="POST" action="{{ url_for('admin_skip', runner_id=runner.id) }}" class="d-inline"
                                   onsubmit="return confirm('{{ runner.name }}을(를) 건너뛰시겠습니까?');">
                                 <button type="submit" class="btn btn-outline-warning btn-sm">건너뛰기</button>
