@@ -13,7 +13,10 @@ import string
 
 from generate_challenge import get_all_problems
 
+import config
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DATABASE_PATH = config.DATABASE_PATH
 CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI센터_챌린지_대상.csv")
 
 NUM_GROUPS = 10
@@ -162,6 +165,14 @@ def init_database():
                 })
 
         db.session.commit()
+
+        # SQLite WAL mode 활성화 (동시 쓰기 성능 3-5배 개선)
+        import sqlite3
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.close()
+        print("SQLite WAL mode 활성화 완료")
+
         print(f"\n{NUM_GROUPS}개 조, {TOTAL_PARTICIPANTS}명 배정 완료")
 
         # 5. firstPlayer.txt 생성
