@@ -27,16 +27,25 @@ def generate_password(length=8):
 
 
 def load_participants_from_csv(path):
-    """CSV에서 참가자 목록을 읽어옵니다. 컬럼: knox_id, name"""
+    """CSV에서 참가자 목록을 읽어옵니다. 컬럼: knox_id, name, group(선택)
+    group 컬럼이 있고 값이 1~10이면 해당 조의 첫 번째 주자로 고정됩니다.
+    반환: (first_players dict {group_id: member}, 일반참가자 list)
+    """
+    first_players = {}  # {group_id: member}
     participants = []
     with open(path, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            participants.append({
+            member = {
                 'knox_id': row.get('knox_id', row.get('Knox-ID', '')).strip(),
                 'name': row.get('name', row.get('이름', '')).strip(),
-            })
-    return participants
+            }
+            group_val = row.get('group', '').strip()
+            if group_val.isdigit() and 1 <= int(group_val) <= NUM_GROUPS:
+                first_players[int(group_val)] = member
+            else:
+                participants.append(member)
+    return first_players, participants
 
 
 def generate_test_participants(n=TOTAL_PARTICIPANTS):
@@ -70,43 +79,52 @@ def init_database():
 
         # 1. 참가자 로드
         if os.path.exists(CSV_PATH):
-            participants = load_participants_from_csv(CSV_PATH)
-            print(f"CSV에서 {len(participants)}명 로드")
+            first_players, participants = load_participants_from_csv(CSV_PATH)
+            print(f"CSV에서 고정 첫번째 주자 {len(first_players)}명, 일반 참가자 {len(participants)}명 로드")
         else:
+            first_players = {}
             participants = generate_test_participants()
             print(f"테스트 참가자 {len(participants)}명 생성")
 
-        if len(participants) < TOTAL_PARTICIPANTS:
-            print(f"경고: 참가자 {len(participants)}명 < 필요 {TOTAL_PARTICIPANTS}명")
-            for i in range(len(participants) + 1, TOTAL_PARTICIPANTS + 1):
+        # 고정 첫번째 주자가 없는 조는 일반 참가자에서 채워야 하므로 총 필요 인원 계산
+        remaining_needed = TOTAL_PARTICIPANTS - len(first_players)
+        if len(participants) < remaining_needed:
+            print(f"경고: 일반 참가자 {len(participants)}명 < 필요 {remaining_needed}명")
+            for i in range(len(participants) + 1, remaining_needed + 1):
                 participants.append({
                     'knox_id': f'extra{i:03d}',
                     'name': f'추가참가자{i:03d}',
                 })
 
-        participants = participants[:TOTAL_PARTICIPANTS]
+        participants = participants[:remaining_needed]
 
         # 2. 문제 로드
         print("130개 문제 생성 중...")
         problems = get_all_problems()
         print(f"  {len(problems)}개 문제 준비 완료")
 
-        # 3. 참가자를 랜덤으로 섞어서 10개 조에 배정
+        # 3. 일반 참가자만 랜덤으로 섞기
         random.seed(2026)
         random.shuffle(participants)
 
         # 4. 조 생성 및 참가자 배정
         first_player_lines = []
         group_roster = {}  # 조별 주자 순서 기록
+        regular_idx = 0  # 일반 참가자 인덱스
 
         for g in range(NUM_GROUPS):
             group = Group(id=g + 1, name=f"조 {g + 1}")
             db.session.add(group)
             group_roster[g + 1] = []
 
-            start = g * PARTICIPANTS_PER_GROUP
-            end = start + PARTICIPANTS_PER_GROUP
-            group_members = participants[start:end]
+            # 첫 번째 주자: 고정 지정 or 일반 참가자에서 배정
+            if (g + 1) in first_players:
+                fixed_first = first_players[g + 1]
+                group_members = [fixed_first] + participants[regular_idx:regular_idx + PARTICIPANTS_PER_GROUP - 1]
+                regular_idx += PARTICIPANTS_PER_GROUP - 1
+            else:
+                group_members = participants[regular_idx:regular_idx + PARTICIPANTS_PER_GROUP]
+                regular_idx += PARTICIPANTS_PER_GROUP
 
             for order, member in enumerate(group_members, 1):
                 problem_idx = g * PARTICIPANTS_PER_GROUP + (order - 1)
