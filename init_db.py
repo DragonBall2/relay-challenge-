@@ -14,7 +14,7 @@ import string
 from generate_challenge import get_all_problems
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI샌터_챌린지_대상.csv")
+CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI센터_챌린지_대상.csv")
 
 NUM_GROUPS = 10
 PARTICIPANTS_PER_GROUP = 13
@@ -37,8 +37,8 @@ def load_participants_from_csv(path):
         reader = csv.DictReader(f)
         for row in reader:
             member = {
-                'knox_id': row.get('knox_id', row.get('Knox-ID', '')).strip(),
-                'name': row.get('name', row.get('이름', '')).strip(),
+                'knox_id': row.get('knox_id', row.get('Knox-ID', row.get('Knox_ID', ''))).strip(),
+                'name': row.get('name', row.get('성명', row.get('이름', ''))).strip(),
             }
             group_val = row.get('group', '').strip()
             if group_val.isdigit() and 1 <= int(group_val) <= NUM_GROUPS:
