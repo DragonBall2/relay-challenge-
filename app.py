@@ -389,6 +389,55 @@ def admin_skip(runner_id):
     return redirect(url_for('admin_dashboard'))
 
 
+@app.route('/admin/defer/<int:runner_id>', methods=['POST'])
+@admin_required
+def admin_defer(runner_id):
+    runner = Runner.query.get_or_404(runner_id)
+    if runner.status not in ('waiting', 'active'):
+        flash('대기 중 또는 진행 중인 주자만 미룰 수 있습니다.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
+    was_active = runner.status == 'active'
+    old_order = runner.run_order
+
+    # 조의 마지막 run_order 조회
+    max_order = db.session.query(db.func.max(Runner.run_order))\
+        .filter_by(group_id=runner.group_id).scalar()
+
+    if old_order == max_order:
+        flash(f'{runner.name}은(는) 이미 마지막 주자입니다.', 'info')
+        return redirect(url_for('admin_dashboard'))
+
+    # old_order보다 뒤에 있는 waiting 주자들의 순서를 1씩 당기기
+    later_runners = Runner.query.filter(
+        Runner.group_id == runner.group_id,
+        Runner.run_order > old_order
+    ).order_by(Runner.run_order).all()
+
+    for r in later_runners:
+        r.run_order -= 1
+
+    # 해당 주자를 맨 뒤로
+    runner.run_order = max_order
+    runner.status = 'waiting'
+    runner.password = ''
+
+    # active였으면 다음 주자(당겨진 순서) 활성화
+    if was_active:
+        next_runner = Runner.query.filter_by(
+            group_id=runner.group_id,
+            run_order=old_order
+        ).first()
+        if next_runner and next_runner.status == 'waiting':
+            password = generate_password()
+            next_runner.password = password
+            next_runner.status = 'active'
+
+    db.session.commit()
+    flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째)', 'info')
+    return redirect(url_for('admin_dashboard'))
+
+
 @app.route('/admin/reset/<int:runner_id>', methods=['POST'])
 @admin_required
 def admin_reset(runner_id):
