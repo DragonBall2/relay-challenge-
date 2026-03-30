@@ -417,10 +417,12 @@ def admin_defer(runner_id):
     for r in later_runners:
         r.run_order -= 1
 
-    # 해당 주자를 맨 뒤로
+    # 해당 주자를 맨 뒤로 (시작 시간 초기화)
     runner.run_order = max_order
     runner.status = 'waiting'
     runner.password = ''
+    runner.started_at = None
+    runner.attempts = 0
 
     # active였으면 다음 주자(당겨진 순서) 활성화
     if was_active:
