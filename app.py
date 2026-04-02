@@ -139,6 +139,15 @@ def format_timedelta(td):
 app.jinja_env.globals['format_timedelta'] = format_timedelta
 
 
+def to_kst(dt):
+    """UTC datetime을 KST(+9)로 변환."""
+    if dt is None:
+        return None
+    return dt + timedelta(hours=9)
+
+app.jinja_env.globals['to_kst'] = to_kst
+
+
 # ============================================================
 # 공개 라우트
 # ============================================================
