@@ -34,15 +34,23 @@ def generate_password(length=8):
 
 
 def check_answer(submitted, correct, problem_type):
-    """답안 비교. 타입별로 비교 방식이 다릅니다."""
+    """답안 비교. 타입별로 비교 방식이 다릅니다.
+    1차: A/B/D=int, C=float 2dec, E=문자열
+    2차: F/I/J=int, G=float 1dec, H=float 2dec
+    """
     submitted = submitted.strip()
     correct = correct.strip()
-    if problem_type in ('A', 'B', 'D'):
+    if problem_type in ('A', 'B', 'D', 'F', 'I', 'J'):
         try:
             return str(int(float(submitted))) == correct
         except (ValueError, OverflowError):
             return False
-    elif problem_type == 'C':
+    elif problem_type == 'G':
+        try:
+            return f"{float(submitted):.1f}" == f"{float(correct):.1f}"
+        except (ValueError, OverflowError):
+            return False
+    elif problem_type in ('C', 'H'):
         try:
             return f"{float(submitted):.2f}" == f"{float(correct):.2f}"
         except (ValueError, OverflowError):
