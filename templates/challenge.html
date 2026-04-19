@@ -68,6 +68,41 @@
                 </form>
             </div>
         </div>
+
+        <!-- 미루기 -->
+        <div class="card mt-4">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div style="font-size: 0.9rem; color: var(--text-secondary);">
+                        막혔거나 당장 풀기 어렵다면 내 차례를 조 맨 뒤로 미룰 수 있습니다.
+                        (다음 주자에게 먼저 기회가 넘어가고, 나중에 다시 시도 가능)
+                    </div>
+                    <form method="POST" action="{{ url_for('defer') }}"
+                          onsubmit="return deferConfirm(event);" class="d-inline">
+                        <input type="hidden" name="reason" id="deferReasonField" value="">
+                        <button type="submit" class="btn btn-outline-primary btn-sm">내 차례 뒤로 미루기</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deferConfirm(ev) {
+    if (!confirm('정말 본인의 차례를 조의 맨 뒤로 미루시겠습니까?\n로그아웃되며, 차례가 다시 돌아오면 재로그인 해야 합니다.')) {
+        ev.preventDefault();
+        return false;
+    }
+    const reason = prompt('사유를 간단히 적어주세요 (선택, 최대 100자):', '');
+    if (reason === null) {
+        ev.preventDefault();
+        return false;
+    }
+    document.getElementById('deferReasonField').value = (reason || '').slice(0, 100);
+    return true;
+}
+</script>
 {% endblock %}

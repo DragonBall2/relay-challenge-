@@ -25,12 +25,13 @@ class Runner(db.Model):
     problem_type = db.Column(db.String(5), nullable=False)
     correct_answer = db.Column(db.String(200), nullable=False)
 
-    status = db.Column(db.String(20), default='waiting')  # waiting|active|completed|skipped
+    status = db.Column(db.String(20), default='waiting')  # waiting|active|completed|passed|skipped
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
     attempts = db.Column(db.Integer, default=0)
     submitted_answer = db.Column(db.String(200), nullable=True)
     next_runner_password = db.Column(db.String(20), nullable=True)
+    reason = db.Column(db.String(200), nullable=True)
 
 
 class AttemptLog(db.Model):
