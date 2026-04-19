@@ -34,15 +34,23 @@ def generate_password(length=8):
 
 
 def check_answer(submitted, correct, problem_type):
-    """답안 비교. 타입별로 비교 방식이 다릅니다."""
+    """답안 비교. 타입별로 비교 방식이 다릅니다.
+    1차: A/B/D=int, C=float 2dec, E=문자열
+    2차: F/I/J=int, G=float 1dec, H=float 2dec
+    """
     submitted = submitted.strip()
     correct = correct.strip()
-    if problem_type in ('A', 'B', 'D'):
+    if problem_type in ('A', 'B', 'D', 'F', 'I', 'J'):
         try:
             return str(int(float(submitted))) == correct
         except (ValueError, OverflowError):
             return False
-    elif problem_type == 'C':
+    elif problem_type == 'G':
+        try:
+            return f"{float(submitted):.1f}" == f"{float(correct):.1f}"
+        except (ValueError, OverflowError):
+            return False
+    elif problem_type in ('C', 'H'):
         try:
             return f"{float(submitted):.2f}" == f"{float(correct):.2f}"
         except (ValueError, OverflowError):
@@ -78,12 +86,15 @@ def get_group_rankings():
     for group in groups:
         runners = Runner.query.filter_by(group_id=group.id).order_by(Runner.run_order).all()
         total = len(runners)
-        completed = sum(1 for r in runners if r.status in ('completed', 'skipped'))
+        completed = sum(1 for r in runners if r.status in ('completed', 'passed', 'skipped'))
+        # tie-breaker: skipped 제외(완주/PASS만)
+        real_completed = sum(1 for r in runners if r.status in ('completed', 'passed'))
         current_runner = next((r for r in runners if r.status == 'active'), None)
 
-        # 조 시작 시간: 1번 주자의 started_at
-        first_runner = runners[0] if runners else None
-        start_time = first_runner.started_at if first_runner else None
+        # 조 시작 시간: 가장 이른 started_at (skipped 주자 제외)
+        started_times = [r.started_at for r in runners
+                         if r.started_at and r.status != 'skipped']
+        start_time = min(started_times) if started_times else None
 
         # 조 완료 시간
         finish_time = group.finished_at
@@ -100,6 +111,7 @@ def get_group_rankings():
             'group': group,
             'total': total,
             'completed': completed,
+            'real_completed': real_completed,
             'progress': round(completed / total * 100) if total else 0,
             'current_runner': current_runner,
             'start_time': start_time,
@@ -108,11 +120,11 @@ def get_group_rankings():
             'is_finished': finish_time is not None,
         })
 
-    # 정렬: 완주 조가 먼저 (완주시간 빠른순), 미완주 조는 진행률 높은순
+    # 정렬: 완주 조가 먼저 (완주시간 빠른순), 미완주 조는 정규 완료수 높은순(skip 제외)
     finished = sorted([r for r in rankings if r['is_finished']],
                       key=lambda x: x['finish_time'])
     unfinished = sorted([r for r in rankings if not r['is_finished']],
-                        key=lambda x: (-x['completed'], x['group'].id))
+                        key=lambda x: (-x['real_completed'], x['group'].id))
 
     all_ranked = finished + unfinished
     for i, r in enumerate(all_ranked):
@@ -146,6 +158,11 @@ def to_kst(dt):
     return dt + timedelta(hours=9)
 
 app.jinja_env.globals['to_kst'] = to_kst
+
+
+def _is_ajax():
+    return (request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or request.accept_mimetypes.best == 'application/json')
 
 
 # ============================================================
@@ -183,7 +200,7 @@ def login():
         flash('아직 차례가 아닙니다. 이전 주자가 완료해야 접속할 수 있습니다.', 'warning')
         return redirect(url_for('index'))
 
-    if runner.status == 'completed':
+    if runner.status in ('completed', 'passed'):
         if runner.password != password:
             flash('비밀번호가 일치하지 않습니다.', 'danger')
             return redirect(url_for('index'))
@@ -224,7 +241,7 @@ def challenge():
         flash('세션이 만료되었습니다.', 'warning')
         return redirect(url_for('index'))
 
-    if runner.status == 'completed':
+    if runner.status in ('completed', 'passed'):
         return redirect(url_for('success'))
 
     return render_template('challenge.html', runner=runner)
@@ -234,7 +251,7 @@ def challenge():
 @login_required
 def submit():
     runner = db.session.get(Runner,session['runner_id'])
-    if not runner or runner.status == 'completed':
+    if not runner or runner.status in ('completed', 'passed'):
         return redirect(url_for('index'))
 
     submitted = request.form.get('answer', '').strip()
@@ -272,11 +289,60 @@ def submit():
         return redirect(url_for('challenge'))
 
 
+@app.route('/defer', methods=['POST'])
+@login_required
+def defer():
+    """주자 본인이 자기 차례를 조 맨 뒤로 미룸."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner or runner.status != 'active':
+        flash('현재 진행 중인 주자만 미룰 수 있습니다.', 'warning')
+        return redirect(url_for('index'))
+
+    old_order = runner.run_order
+    max_order = db.session.query(db.func.max(Runner.run_order))\
+        .filter_by(group_id=runner.group_id).scalar()
+
+    if old_order == max_order:
+        flash('이미 마지막 주자라 더 미룰 수 없습니다.', 'info')
+        return redirect(url_for('challenge'))
+
+    # 뒤에 있는 주자들을 1씩 당김
+    later_runners = Runner.query.filter(
+        Runner.group_id == runner.group_id,
+        Runner.run_order > old_order
+    ).order_by(Runner.run_order).all()
+    for r in later_runners:
+        r.run_order -= 1
+
+    reason = request.form.get('reason', '').strip()[:200]
+    runner.run_order = max_order
+    runner.status = 'waiting'
+    runner.password = ''
+    runner.started_at = None
+    runner.attempts = 0
+    runner.reason = reason or None
+
+    # 당겨진 순서에 있는 waiting 주자 활성화
+    next_runner = Runner.query.filter_by(
+        group_id=runner.group_id,
+        run_order=old_order
+    ).first()
+    if next_runner and next_runner.status == 'waiting':
+        password = generate_password()
+        next_runner.password = password
+        next_runner.status = 'active'
+
+    db.session.commit()
+    session.pop('runner_id', None)
+    flash('차례를 맨 뒤로 미뤘습니다. 다음 주자가 활성화됩니다.', 'info')
+    return redirect(url_for('index'))
+
+
 @app.route('/success')
 @login_required
 def success():
     runner = db.session.get(Runner,session['runner_id'])
-    if not runner or runner.status != 'completed':
+    if not runner or runner.status not in ('completed', 'passed'):
         return redirect(url_for('index'))
 
     # 다음 주자 정보
@@ -390,11 +456,37 @@ def admin_dashboard():
 def admin_skip(runner_id):
     runner = Runner.query.get_or_404(runner_id)
     if runner.status in ('waiting', 'active'):
+        reason = request.form.get('reason', '').strip()[:200]
         runner.status = 'skipped'
-        runner.completed_at = datetime.utcnow()
+        # Skip은 개인 경과시간에서 제외 → completed_at 비워둠
+        runner.completed_at = None
+        runner.reason = reason or None
         _activate_next_runner(runner)
         db.session.commit()
+        if _is_ajax():
+            return jsonify({'ok': True})
         flash(f'{runner.name} 건너뛰기 완료', 'info')
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/pass/<int:runner_id>', methods=['POST'])
+@admin_required
+def admin_pass(runner_id):
+    runner = Runner.query.get_or_404(runner_id)
+    if runner.status in ('waiting', 'active'):
+        reason = request.form.get('reason', '').strip()[:200]
+        # started_at이 아직 없으면 지금으로 설정(로그인 전에 PASS 처리된 경우)
+        if not runner.started_at:
+            runner.started_at = datetime.utcnow()
+        runner.status = 'passed'
+        runner.completed_at = datetime.utcnow()
+        runner.reason = reason or None
+        runner.submitted_answer = '[admin_pass]'
+        _activate_next_runner(runner)
+        db.session.commit()
+        if _is_ajax():
+            return jsonify({'ok': True})
+        flash(f'{runner.name} PASS 처리 완료', 'success')
     return redirect(url_for('admin_dashboard'))
 
 
@@ -445,6 +537,8 @@ def admin_defer(runner_id):
             next_runner.status = 'active'
 
     db.session.commit()
+    if _is_ajax():
+        return jsonify({'ok': True})
     flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째)', 'info')
     return redirect(url_for('admin_dashboard'))
 
@@ -468,6 +562,7 @@ def admin_reset(runner_id):
     runner.submitted_answer = None
     runner.attempts = 0
     runner.next_runner_password = None
+    runner.reason = None
 
     # 조 완료 상태도 리셋
     group = db.session.get(Group,runner.group_id)
@@ -475,8 +570,29 @@ def admin_reset(runner_id):
         group.finished_at = None
 
     db.session.commit()
+    if _is_ajax():
+        return jsonify({'ok': True})
     flash(f'{runner.name} 리셋 완료', 'info')
     return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/partial/groups')
+@admin_required
+def admin_partial_groups():
+    groups = Group.query.order_by(Group.id).all()
+    all_runners = Runner.query.order_by(Runner.group_id, Runner.run_order).all()
+    grouped = {}
+    for runner in all_runners:
+        grouped.setdefault(runner.group_id, []).append(runner)
+    rankings = get_group_rankings()
+    total_completed = sum(r['completed'] for r in rankings)
+    total_runners = sum(r['total'] for r in rankings)
+    return render_template('_admin_groups.html',
+                           groups=groups,
+                           grouped=grouped,
+                           rankings=rankings,
+                           total_completed=total_completed,
+                           total_runners=total_runners)
 
 
 @app.route('/admin/api/status')
@@ -494,7 +610,7 @@ def admin_api_status():
         runner_list = []
         for rn in runners:
             elapsed = None
-            if rn.started_at and rn.completed_at:
+            if rn.status != 'skipped' and rn.started_at and rn.completed_at:
                 elapsed = format_timedelta(rn.completed_at - rn.started_at)
             runner_list.append({
                 'id': rn.id,
@@ -504,6 +620,7 @@ def admin_api_status():
                 'status': rn.status,
                 'attempts': rn.attempts,
                 'elapsed': elapsed,
+                'reason': rn.reason,
             })
         data['groups'].append({
             'group_id': r['group'].id,
@@ -529,22 +646,39 @@ def admin_logout():
 # 내부 함수
 # ============================================================
 def _activate_next_runner(current_runner):
-    """현재 주자 완료 시 다음 주자를 활성화합니다."""
+    """현재 주자 완료 시 다음 주자를 활성화합니다.
+
+    defer로 미뤄진 주자도 run_order가 맨 뒤로 갔기 때문에 자동으로 이어짐.
+    조 완주는 조 내 모든 주자가 종료 상태(completed/passed/skipped)일 때만 확정.
+    """
     next_runner = Runner.query.filter_by(
         group_id=current_runner.group_id,
         run_order=current_runner.run_order + 1
     ).first()
 
-    if next_runner:
+    if next_runner and next_runner.status == 'waiting':
         password = generate_password()
         next_runner.password = password
         next_runner.status = 'active'
         current_runner.next_runner_password = password
-    else:
-        # 마지막 주자 → 조 완주
-        group = db.session.get(Group,current_runner.group_id)
-        if not group.finished_at:
-            group.finished_at = datetime.utcnow()
+        return
+
+    # 다음이 없거나 이미 활성/완료 상태면, 조 내 남은 waiting 주자를 찾음
+    remaining = Runner.query.filter_by(
+        group_id=current_runner.group_id,
+        status='waiting'
+    ).order_by(Runner.run_order).first()
+    if remaining:
+        password = generate_password()
+        remaining.password = password
+        remaining.status = 'active'
+        current_runner.next_runner_password = password
+        return
+
+    # 모두 종료 → 조 완주
+    group = db.session.get(Group, current_runner.group_id)
+    if not group.finished_at:
+        group.finished_at = datetime.utcnow()
 
 
 # ============================================================
