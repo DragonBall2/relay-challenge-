@@ -364,7 +364,7 @@ def generate_code_blocks(n_blocks=25):
     return sections_text, all_code_data
 
 
-def generate_registry_sections(n_sections=12, entries_per_section=30):
+def generate_registry_sections(n_sections=12, entries_per_section=30, emp_count=500):
     """레지스트리 섹션 생성."""
     sections_text = []
     all_registry_entries = []
@@ -377,7 +377,7 @@ def generate_registry_sections(n_sections=12, entries_per_section=30):
             entry_id = f"REG-{sec_i + 1:03d}-{ent_i + 1:04d}"
             tag = random.choice(TAGS)
             priority = random.choice(PRIORITIES)
-            ref = f"EMP{random.randint(1, 500):05d}"
+            ref = f"EMP{random.randint(1, emp_count):05d}"
             metric = round(random.uniform(0.1, 999.9), 1)
 
             line = f"{entry_id} | tag={tag} | priority={priority} | ref={ref} | metric={metric}"
@@ -773,6 +773,219 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
 
 
 # ============================================================
+# 2차 챌린지용 멀티홉 문제 생성기 (F~J)
+# - 모든 타입이 2-hop 구조 (필터 → ID 수집 → 다른 섹션 재필터 → 집계)
+# - 난이도 균일화: 1단계 5~20개, 2단계 10~40개 매칭 강제
+# ============================================================
+
+STEP1_MIN = 3
+STEP1_MAX = 150
+STEP2_MIN = 5
+STEP2_MAX = 100
+
+
+def _in_range(size, lo, hi):
+    return lo <= size <= hi
+
+
+def generate_type_f_problems(json_records, log_entries, n=PROBLEMS_PER_TYPE):
+    """Type F — 2-hop: JSON(dept+status) → LOG(emp_id+level) → duration 합."""
+    problems = []
+    used_answers = set()
+
+    # 직원 단위로 미리 그룹핑
+    json_by_emp = {r["employee_id"]: r for r in json_records}
+
+    combos = [(d, s, l) for d in DEPARTMENTS for s in STATUSES
+              for l in ["ERROR", "WARN", "CRITICAL", "INFO"]]
+    random.shuffle(combos)
+
+    for dept, status, level in combos:
+        if len(problems) >= n:
+            break
+        emp_ids = {r["employee_id"] for r in json_records
+                   if r["department"] == dept and r["status"] == status}
+        if not _in_range(len(emp_ids), STEP1_MIN, STEP1_MAX):
+            continue
+        logs = [e for e in log_entries
+                if e["employee_id"] in emp_ids and e["level"] == level]
+        if not _in_range(len(logs), STEP2_MIN, STEP2_MAX):
+            continue
+        total = sum(e["duration"] for e in logs)
+        answer = f"{total}"
+        if answer in used_answers or total == 0:
+            continue
+        used_answers.add(answer)
+
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
+                f"[1단계] JSON_BLOCK 섹션들에서 department=\"{dept}\", status=\"{status}\" 인 직원들의 employee_id를 수집하세요.\n"
+                f"[2단계] LOG_SECTION 섹션들에서 위 employee_id에 해당하고 로그 레벨이 {level} 인 항목들을 찾으세요.\n"
+                f"해당 로그 항목들의 duration 값을 모두 합산하세요.\n"
+                f"(1단계 매칭 {len(emp_ids)}명, 2단계 매칭 {len(logs)}건이어야 합니다)\n"
+                f"답: duration 합계 (정수)")
+        problems.append(Problem(
+            pid=len(problems) + 1, ptype="F", text=text, answer=answer,
+            params={"dept": dept, "status": status, "level": level,
+                    "step1": len(emp_ids), "step2": len(logs)}
+        ))
+    return problems
+
+
+def generate_type_g_problems(json_records, registry_entries, n=PROBLEMS_PER_TYPE):
+    """Type G — 2-hop: JSON(role+status) → REGISTRY(ref+priority) → metric 합."""
+    problems = []
+    used_answers = set()
+
+    combos = [(r, s, p) for r in ROLES for s in STATUSES for p in PRIORITIES]
+    random.shuffle(combos)
+
+    for role, status, priority in combos:
+        if len(problems) >= n:
+            break
+        emp_ids = {r["employee_id"] for r in json_records
+                   if r["role"] == role and r["status"] == status}
+        if not _in_range(len(emp_ids), STEP1_MIN, STEP1_MAX):
+            continue
+        regs = [e for e in registry_entries
+                if e["ref"] in emp_ids and e["priority"] == priority]
+        if not _in_range(len(regs), STEP2_MIN, STEP2_MAX):
+            continue
+        total = round(sum(e["metric"] for e in regs), 1)
+        answer = f"{total:.1f}"
+        if answer in used_answers or total == 0:
+            continue
+        used_answers.add(answer)
+
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
+                f"[1단계] JSON_BLOCK 섹션들에서 role=\"{role}\", status=\"{status}\" 인 직원들의 employee_id를 수집하세요.\n"
+                f"[2단계] REGISTRY 섹션들에서 ref 값이 1단계 employee_id 중 하나이고 priority=\"{priority}\" 인 항목을 찾으세요.\n"
+                f"해당 REGISTRY 항목들의 metric 값을 모두 합산하세요.\n"
+                f"(1단계 매칭 {len(emp_ids)}명, 2단계 매칭 {len(regs)}건이어야 합니다)\n"
+                f"답: metric 합계 (소수점 1자리, 예: 123.4)")
+        problems.append(Problem(
+            pid=len(problems) + 1, ptype="G", text=text, answer=answer,
+            params={"role": role, "status": status, "priority": priority,
+                    "step1": len(emp_ids), "step2": len(regs)}
+        ))
+    return problems
+
+
+def generate_type_h_problems(registry_entries, json_records, n=PROBLEMS_PER_TYPE):
+    """Type H — 2-hop: REGISTRY(tag+priority) → JSON(emp+dept) → score 합."""
+    problems = []
+    used_answers = set()
+
+    combos = [(t, p, d) for t in TAGS for p in PRIORITIES for d in DEPARTMENTS]
+    random.shuffle(combos)
+
+    for tag, priority, dept in combos:
+        if len(problems) >= n:
+            break
+        refs = {e["ref"] for e in registry_entries
+                if e["tag"] == tag and e["priority"] == priority}
+        if not _in_range(len(refs), STEP1_MIN, STEP1_MAX):
+            continue
+        records = [r for r in json_records
+                   if r["employee_id"] in refs and r["department"] == dept]
+        if not _in_range(len(records), STEP2_MIN, STEP2_MAX):
+            continue
+        total = round(sum(r["score"] for r in records), 2)
+        answer = f"{total:.2f}"
+        if answer in used_answers or total == 0:
+            continue
+        used_answers.add(answer)
+
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
+                f"[1단계] REGISTRY 섹션들에서 tag=\"{tag}\", priority=\"{priority}\" 인 항목의 ref 값을 수집하세요 (중복 제거).\n"
+                f"[2단계] JSON_BLOCK 섹션들에서 employee_id가 1단계 ref에 해당하고 department=\"{dept}\" 인 레코드를 찾으세요.\n"
+                f"해당 JSON 레코드들의 score 값을 모두 합산하세요.\n"
+                f"(1단계 매칭 ref {len(refs)}개, 2단계 매칭 {len(records)}건이어야 합니다)\n"
+                f"답: score 합계 (소수점 2자리, 예: 123.45)")
+        problems.append(Problem(
+            pid=len(problems) + 1, ptype="H", text=text, answer=answer,
+            params={"tag": tag, "priority": priority, "dept": dept,
+                    "step1": len(refs), "step2": len(records)}
+        ))
+    return problems
+
+
+def generate_type_i_problems(log_entries, json_records, n=PROBLEMS_PER_TYPE):
+    """Type I — 2-hop: LOG(module+level) → JSON(emp+status) → 레코드 수."""
+    problems = []
+    used_answers = set()
+
+    combos = [(m, l, s) for m in MODULES for l in LOG_LEVELS for s in STATUSES]
+    random.shuffle(combos)
+
+    for module, level, status in combos:
+        if len(problems) >= n:
+            break
+        emp_ids = {e["employee_id"] for e in log_entries
+                   if e["module"] == module and e["level"] == level}
+        if not _in_range(len(emp_ids), STEP1_MIN, STEP1_MAX):
+            continue
+        records = [r for r in json_records
+                   if r["employee_id"] in emp_ids and r["status"] == status]
+        if not _in_range(len(records), STEP2_MIN, STEP2_MAX):
+            continue
+        answer = f"{len(records)}"
+        if answer in used_answers:
+            continue
+        used_answers.add(answer)
+
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
+                f"[1단계] LOG_SECTION 섹션들에서 module=\"{module}\", level={level} 인 로그의 employee_id를 수집하세요 (중복 제거).\n"
+                f"[2단계] JSON_BLOCK 섹션들에서 employee_id가 1단계 집합에 포함되고 status=\"{status}\" 인 레코드를 찾으세요.\n"
+                f"해당 JSON 레코드의 개수를 세세요.\n"
+                f"(1단계 매칭 직원 {len(emp_ids)}명 기준)\n"
+                f"답: 레코드 개수 (정수)")
+        problems.append(Problem(
+            pid=len(problems) + 1, ptype="I", text=text, answer=answer,
+            params={"module": module, "level": level, "status": status,
+                    "step1": len(emp_ids), "step2": len(records)}
+        ))
+    return problems
+
+
+def generate_type_j_problems(log_entries, registry_entries, n=PROBLEMS_PER_TYPE):
+    """Type J — 2-hop: LOG(module+level) → REGISTRY(ref+tag) → 항목 수."""
+    problems = []
+    used_answers = set()
+
+    combos = [(m, l, t) for m in MODULES for l in LOG_LEVELS for t in TAGS]
+    random.shuffle(combos)
+
+    for module, level, tag in combos:
+        if len(problems) >= n:
+            break
+        emp_ids = {e["employee_id"] for e in log_entries
+                   if e["module"] == module and e["level"] == level}
+        if not _in_range(len(emp_ids), STEP1_MIN, STEP1_MAX):
+            continue
+        entries = [e for e in registry_entries
+                   if e["ref"] in emp_ids and e["tag"] == tag]
+        if not _in_range(len(entries), STEP2_MIN, STEP2_MAX):
+            continue
+        answer = f"{len(entries)}"
+        if answer in used_answers:
+            continue
+        used_answers.add(answer)
+
+        text = (f"challenge_data.dat 파일에서 2단계 분석을 수행하세요:\n"
+                f"[1단계] LOG_SECTION 섹션들에서 module=\"{module}\", level={level} 인 로그의 employee_id를 수집하세요 (중복 제거).\n"
+                f"[2단계] REGISTRY 섹션들에서 ref가 1단계 집합에 포함되고 tag=\"{tag}\" 인 항목을 찾으세요.\n"
+                f"해당 REGISTRY 항목의 개수를 세세요.\n"
+                f"(1단계 매칭 직원 {len(emp_ids)}명 기준)\n"
+                f"답: REGISTRY 항목 개수 (정수)")
+        problems.append(Problem(
+            pid=len(problems) + 1, ptype="J", text=text, answer=answer,
+            params={"module": module, "level": level, "tag": tag,
+                    "step1": len(emp_ids), "step2": len(entries)}
+        ))
+    return problems
+
+
+# ============================================================
 # 엑셀 생성
 # ============================================================
 def create_excel(all_problems, filename="challenge_admin.xlsx"):
@@ -907,12 +1120,12 @@ def create_excel(all_problems, filename="challenge_admin.xlsx"):
         ["4", "에이전트가 코드를 작성하고 실행하여 답을 알려줍니다"],
         ["5", "답을 운영자에게 제출합니다"],
         ["", ""],
-        ["[문제 유형 설명]", ""],
-        ["Type A", "로그 필터링 + 집계: 특정 조건의 로그 항목을 찾아 duration 합산"],
-        ["Type B", "크로스 레퍼런스: JSON에서 직원 ID 수집 → 로그에서 해당 ID 필터링 → 집계"],
-        ["Type C", "CSV 필터링 + 계산: 특정 조건의 CSV 행을 찾아 수치 계산"],
-        ["Type D", "코드 블록 분석: 특정 언어 블록에서 키워드/함수 수 분석"],
-        ["Type E", "레지스트리 조회: 태그 필터 → 정렬 → N번째 항목 추출"],
+        ["[문제 유형 설명 — 2차 전부 2-hop 균일 난이도]", ""],
+        ["Type F", "JSON → LOG: JSON에서 직원 ID 수집 → 로그에서 해당 ID + 레벨 필터 → duration 합"],
+        ["Type G", "JSON → REGISTRY: JSON에서 직원 ID 수집 → 레지스트리에서 ref+priority 필터 → metric 합 (소수 1자리)"],
+        ["Type H", "REGISTRY → JSON: 레지스트리에서 ref 수집 → JSON에서 해당 직원+dept 필터 → score 합 (소수 2자리)"],
+        ["Type I", "LOG → JSON: 로그에서 직원 ID 수집 → JSON에서 해당 직원+status 필터 → 레코드 수"],
+        ["Type J", "LOG → REGISTRY: 로그에서 직원 ID 수집 → 레지스트리에서 ref+tag 필터 → 항목 수"],
         ["", ""],
         ["[답 검증]", ""],
         ["", "'마스터 답안지' 시트의 F열에 제출 답안을 입력하면 G열에서 자동 판정됩니다"],
@@ -991,16 +1204,16 @@ def main():
     print("코딩 에이전트 릴레이 설치 챌린지 - 문제 생성기")
     print("=" * 60)
 
-    # 1. 데이터 생성
+    # 1. 데이터 생성 (2차: 데이터 볼륨 증량)
     print("\n[1/6] 직원 풀 생성...")
-    employees = generate_employees(500)
+    employees = generate_employees(800)
 
     print("[2/6] 섹션 생성...")
-    log_sections, log_entries = generate_log_sections(employees)
+    log_sections, log_entries = generate_log_sections(employees, n_sections=60, lines_per_section=80)
     json_sections, json_records = generate_json_blocks(employees)
     csv_sections, csv_rows = generate_csv_tables()
     code_sections, code_data = generate_code_blocks()
-    registry_sections, registry_entries = generate_registry_sections()
+    registry_sections, registry_entries = generate_registry_sections(n_sections=30, entries_per_section=100, emp_count=len(employees))
     prose_sections = generate_prose_blocks()
     meta_sections = generate_metadata_dumps()
 
@@ -1025,22 +1238,22 @@ def main():
     file_size = len(file_content.encode("utf-8"))
     print(f"  -> {line_count:,} 줄, {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
-    # 3. 문제 생성
-    print("\n[4/6] 130개 고유 문제 생성...")
-    problems_a = generate_type_a_problems(log_entries)
-    problems_b = generate_type_b_problems(json_records, log_entries)
-    problems_c = generate_type_c_problems(csv_rows)
-    problems_d = generate_type_d_problems(code_data)
-    problems_e = generate_type_e_problems(registry_entries)
+    # 3. 문제 생성 (2차 — 전부 2-hop 균일 난이도)
+    print("\n[4/6] 130개 고유 2-hop 문제 생성...")
+    problems_f = generate_type_f_problems(json_records, log_entries)
+    problems_g = generate_type_g_problems(json_records, registry_entries)
+    problems_h = generate_type_h_problems(registry_entries, json_records)
+    problems_i = generate_type_i_problems(log_entries, json_records)
+    problems_j = generate_type_j_problems(log_entries, registry_entries)
 
-    print(f"  Type A (로그 집계): {len(problems_a)}개")
-    print(f"  Type B (크로스레퍼런스): {len(problems_b)}개")
-    print(f"  Type C (CSV 계산): {len(problems_c)}개")
-    print(f"  Type D (코드 분석): {len(problems_d)}개")
-    print(f"  Type E (레지스트리 조회): {len(problems_e)}개")
+    print(f"  Type F (JSON→LOG 합계): {len(problems_f)}개")
+    print(f"  Type G (JSON→REG 합계): {len(problems_g)}개")
+    print(f"  Type H (REG→JSON 합계): {len(problems_h)}개")
+    print(f"  Type I (LOG→JSON 카운트): {len(problems_i)}개")
+    print(f"  Type J (LOG→REG 카운트): {len(problems_j)}개")
 
     # 문제 배정: 타입을 순환하며 배정 (조 내에서 다양한 유형이 나오도록)
-    all_pools = [problems_a, problems_b, problems_c, problems_d, problems_e]
+    all_pools = [problems_f, problems_g, problems_h, problems_i, problems_j]
     pool_indices = [0, 0, 0, 0, 0]
     all_problems = []
 
@@ -1069,7 +1282,7 @@ def main():
     print(f"  고유 답: {len(unique_answers)}개")
     if len(unique_answers) < len(all_problems):
         dup_count = len(all_problems) - len(unique_answers)
-        print(f"  ⚠ 중복 답: {dup_count}개 (타입 간 중복은 허용)")
+        print(f"  [!] 중복 답: {dup_count}개 (타입 간 중복은 허용)")
 
     # 4. 엑셀 생성
     print("\n[5/6] 엑셀 파일 생성...")
@@ -1092,22 +1305,22 @@ def main():
 def get_all_problems():
     """외부에서 호출하여 130개 문제 목록을 반환하는 함수."""
     random.seed(SEED)
-    employees = generate_employees(500)
-    log_sections, log_entries = generate_log_sections(employees)
+    employees = generate_employees(800)
+    log_sections, log_entries = generate_log_sections(employees, n_sections=60, lines_per_section=80)
     json_sections, json_records = generate_json_blocks(employees)
     csv_sections, csv_rows = generate_csv_tables()
     code_sections, code_data = generate_code_blocks()
-    registry_sections, registry_entries = generate_registry_sections()
+    registry_sections, registry_entries = generate_registry_sections(n_sections=30, entries_per_section=100, emp_count=len(employees))
     _ = generate_prose_blocks()
     _ = generate_metadata_dumps()
 
-    problems_a = generate_type_a_problems(log_entries)
-    problems_b = generate_type_b_problems(json_records, log_entries)
-    problems_c = generate_type_c_problems(csv_rows)
-    problems_d = generate_type_d_problems(code_data)
-    problems_e = generate_type_e_problems(registry_entries)
+    problems_f = generate_type_f_problems(json_records, log_entries)
+    problems_g = generate_type_g_problems(json_records, registry_entries)
+    problems_h = generate_type_h_problems(registry_entries, json_records)
+    problems_i = generate_type_i_problems(log_entries, json_records)
+    problems_j = generate_type_j_problems(log_entries, registry_entries)
 
-    all_pools = [problems_a, problems_b, problems_c, problems_d, problems_e]
+    all_pools = [problems_f, problems_g, problems_h, problems_i, problems_j]
     pool_indices = [0, 0, 0, 0, 0]
     all_problems = []
 
