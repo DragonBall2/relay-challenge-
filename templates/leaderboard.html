@@ -36,7 +36,8 @@
     </div>
 </div>
 
-<!-- 리더보드 테이블 -->
+<!-- 조별 리더보드 -->
+<h4 class="mb-3" style="font-weight: 800;">조별 랭킹</h4>
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -99,6 +100,56 @@
                         </td>
                     </tr>
                     {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 개인 랭킹 TOP 20 -->
+<h4 class="mt-5 mb-3" style="font-weight: 800;">개인 랭킹 TOP {{ individuals|length }}</h4>
+<p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: -0.5rem;">
+    실제 답안을 제출하여 완료한 주자만 경과시간 오름차순으로 표시됩니다.
+</p>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark-custom mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">순위</th>
+                        <th>이름</th>
+                        <th>조</th>
+                        <th>소요시간</th>
+                        <th>시도</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if individuals %}
+                    {% for it in individuals %}
+                    <tr {% if it.rank <= 3 %}style="background: rgba(255,215,0,0.03);"{% endif %}>
+                        <td>
+                            {% if it.rank <= 3 %}
+                            <span class="rank-badge rank-{{ it.rank }}">{{ it.rank }}</span>
+                            {% else %}
+                            <span class="rank-badge rank-other">{{ it.rank }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-weight: 600;">{{ it.runner.name }}</td>
+                        <td>{{ it.runner.group.name }}</td>
+                        <td style="font-family: 'D2Coding', Consolas, monospace; font-size: 0.9rem;">
+                            {{ format_timedelta(it.elapsed) }}
+                        </td>
+                        <td>{{ it.runner.attempts }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center" style="color: var(--text-secondary); padding: 1.5rem;">
+                            아직 완료한 주자가 없습니다.
+                        </td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>
