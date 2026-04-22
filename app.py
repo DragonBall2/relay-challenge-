@@ -389,7 +389,7 @@ def get_individual_rankings(limit=20):
 @app.route('/leaderboard')
 def leaderboard():
     rankings = get_group_rankings()
-    individuals = get_individual_rankings(limit=20)
+    individuals = get_individual_rankings(limit=10)
     return render_template('leaderboard.html',
                            rankings=rankings,
                            individuals=individuals)
