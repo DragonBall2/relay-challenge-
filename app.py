@@ -367,10 +367,32 @@ def success():
                            is_group_finished=is_group_finished)
 
 
+def get_individual_rankings(limit=20):
+    """개인 경과시간 랭킹 — status='completed' 주자만, 경과시간 오름차순."""
+    runners = Runner.query.filter_by(status='completed')\
+        .filter(Runner.started_at.isnot(None))\
+        .filter(Runner.completed_at.isnot(None)).all()
+    items = []
+    for r in runners:
+        elapsed = r.completed_at - r.started_at
+        items.append({
+            'runner': r,
+            'elapsed': elapsed,
+            'elapsed_seconds': int(elapsed.total_seconds()),
+        })
+    items.sort(key=lambda x: x['elapsed_seconds'])
+    for i, it in enumerate(items[:limit]):
+        it['rank'] = i + 1
+    return items[:limit]
+
+
 @app.route('/leaderboard')
 def leaderboard():
     rankings = get_group_rankings()
-    return render_template('leaderboard.html', rankings=rankings)
+    individuals = get_individual_rankings(limit=20)
+    return render_template('leaderboard.html',
+                           rankings=rankings,
+                           individuals=individuals)
 
 
 @app.route('/guide')
