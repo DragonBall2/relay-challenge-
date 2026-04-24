@@ -6,6 +6,10 @@ challenge_data.dat
 challenge_admin.xlsx
 firstPlayer.txt
 groupRoster.txt
+settings.json
+
+# 샘플 CSV (관리자 테스트용)
+sample_participants*.csv
 
 # 환경변수
 .env

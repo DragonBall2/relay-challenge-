@@ -3,16 +3,95 @@
 {% block title %}관리자 대시보드{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 style="font-weight: 800;">관리자 대시보드</h2>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-3">
+        <h2 class="mb-0" style="font-weight: 800;">관리자 대시보드</h2>
+        {% if not initialized %}
+        <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+            ⚠ 초기화 필요
+        </span>
+        {% elif challenge_opened %}
+        <span class="badge bg-success" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+            🟢 공개 중
+        </span>
+        {% else %}
+        <span class="badge bg-warning" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; color: #000;">
+            🔒 비공개 (준비 중)
+        </span>
+        {% endif %}
+    </div>
     <div>
         <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">5초마다 자동 갱신</span>
+        {% if initialized %}
+        <form method="POST" action="{{ url_for('admin_toggle_open') }}" class="d-inline ms-2">
+            {% if challenge_opened %}
+            <button type="submit" class="btn btn-outline-warning btn-sm"
+                    onclick="return confirm('챌린지를 비공개로 전환할까요? 참가자들이 즉시 준비 중 페이지를 보게 됩니다.');">
+                🔒 비공개로 전환
+            </button>
+            {% else %}
+            <button type="submit" class="btn btn-success btn-sm"
+                    onclick="return confirm('챌린지를 공개할까요? 참가자들이 즉시 접속 가능해집니다.');">
+                🟢 공개하기
+            </button>
+            {% endif %}
+        </form>
+        {% endif %}
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="btn-view-first-player">firstPlayer.txt</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-1" id="btn-view-roster">groupRoster.txt</button>
+        <a href="{{ url_for('admin_init_download', kind='challenge-data') }}" class="btn btn-outline-secondary btn-sm ms-1">challenge_data.dat</a>
+        <a href="{{ url_for('admin_init_download', kind='relay-db') }}" class="btn btn-outline-secondary btn-sm ms-1" title="SQLite DB 스냅샷">relay.db</a>
+        <a href="{{ url_for('admin_init') }}" class="btn btn-outline-primary btn-sm ms-2">초기화 마법사</a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-secondary btn-sm ms-2">로그아웃</a>
     </div>
 </div>
 
 <div id="admin-dashboard-data">
     {% include "_admin_groups.html" %}
+</div>
+
+<!-- groupRoster.txt 모달 (정답 포함 - 취급 주의) -->
+<div class="modal fade" id="rosterModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content" style="background: var(--card-bg, #fff); color: var(--text-primary, #000);">
+      <div class="modal-header">
+        <h5 class="modal-title">groupRoster.txt <span style="color: #ef4444; font-size: 0.85rem; font-weight: 400;">· 정답 포함 · 공유 금지</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-2">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-copy-roster">📋 전체 복사</button>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_init_download', kind='roster') }}">💾 다운로드</a>
+        </div>
+        <pre id="roster-content"
+             style="background: rgba(0,0,0,0.4); padding: 1rem; border-radius: 8px;
+                    font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem;
+                    max-height: 600px; overflow-y: auto; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- firstPlayer.txt 모달 -->
+<div class="modal fade" id="firstPlayerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background: var(--card-bg, #fff); color: var(--text-primary, #000);">
+      <div class="modal-header">
+        <h5 class="modal-title">firstPlayer.txt</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-2">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-copy-first-player">📋 전체 복사</button>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_init_download', kind='first-player') }}">💾 다운로드</a>
+        </div>
+        <pre id="first-player-content"
+             style="background: rgba(0,0,0,0.4); padding: 1rem; border-radius: 8px;
+                    font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem;
+                    max-height: 500px; overflow-y: auto; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Reason 입력 모달 -->
@@ -124,6 +203,66 @@
     });
 
     setInterval(refreshPartial, 5000);
+
+    // firstPlayer.txt 모달
+    const firstPlayerModal = new bootstrap.Modal(document.getElementById('firstPlayerModal'));
+    const firstPlayerContent = document.getElementById('first-player-content');
+    document.getElementById('btn-view-first-player').addEventListener('click', async () => {
+        firstPlayerContent.textContent = '불러오는 중...';
+        firstPlayerModal.show();
+        try {
+            const res = await fetch('{{ url_for("admin_init_download", kind="first-player") }}', {
+                credentials: 'same-origin'
+            });
+            if (res.status === 404) {
+                firstPlayerContent.textContent = 'firstPlayer.txt가 없습니다. 초기화 마법사를 먼저 실행하세요.';
+                return;
+            }
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            firstPlayerContent.textContent = await res.text();
+        } catch (e) {
+            firstPlayerContent.textContent = '로드 실패: ' + e.message;
+        }
+    });
+    document.getElementById('btn-copy-first-player').addEventListener('click', () => {
+        const text = firstPlayerContent.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.getElementById('btn-copy-first-player');
+            const orig = btn.textContent;
+            btn.textContent = '✔ 복사됨';
+            setTimeout(() => { btn.textContent = orig; }, 1500);
+        });
+    });
+
+    // groupRoster.txt 모달 (정답 포함)
+    const rosterModal = new bootstrap.Modal(document.getElementById('rosterModal'));
+    const rosterContent = document.getElementById('roster-content');
+    document.getElementById('btn-view-roster').addEventListener('click', async () => {
+        rosterContent.textContent = '불러오는 중...';
+        rosterModal.show();
+        try {
+            const res = await fetch('{{ url_for("admin_init_download", kind="roster") }}', {
+                credentials: 'same-origin'
+            });
+            if (res.status === 404) {
+                rosterContent.textContent = 'groupRoster.txt가 없습니다. 초기화 마법사를 먼저 실행하세요.';
+                return;
+            }
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            rosterContent.textContent = await res.text();
+        } catch (e) {
+            rosterContent.textContent = '로드 실패: ' + e.message;
+        }
+    });
+    document.getElementById('btn-copy-roster').addEventListener('click', () => {
+        const text = rosterContent.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.getElementById('btn-copy-roster');
+            const orig = btn.textContent;
+            btn.textContent = '✔ 복사됨';
+            setTimeout(() => { btn.textContent = orig; }, 1500);
+        });
+    });
 })();
 </script>
 {% endblock %}

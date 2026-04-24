@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 데이터베이스 초기화 스크립트.
-130명의 참가자, 10개 조, 130개 고유 문제를 DB에 세팅합니다.
+참가자/조/문제를 DB에 세팅합니다. CLI 기본값은 130명 10조.
+
+웹(/admin/init)에서 호출 시에는 init_database()에 group_count, group_sizes,
+ordered_participants 를 넘겨 순서를 확정한 상태로 초기화합니다.
 """
 
 import os
@@ -11,14 +14,14 @@ import random
 import secrets
 import string
 
-from generate_challenge import get_all_problems
+from generate_challenge import get_all_problems, main as generate_main
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI샌터_챌린지_대상.csv")
 
-NUM_GROUPS = 10
-PARTICIPANTS_PER_GROUP = 13
-TOTAL_PARTICIPANTS = NUM_GROUPS * PARTICIPANTS_PER_GROUP  # 130
+DEFAULT_NUM_GROUPS = 10
+DEFAULT_PARTICIPANTS_PER_GROUP = 13
+DEFAULT_TOTAL = DEFAULT_NUM_GROUPS * DEFAULT_PARTICIPANTS_PER_GROUP  # 130
 
 
 def generate_password(length=8):
@@ -26,12 +29,21 @@ def generate_password(length=8):
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
+def compute_group_sizes(total: int, group_count: int) -> list[int]:
+    """나머지를 앞 조부터 +1명 분배하여 조별 정원 리스트 반환."""
+    if group_count <= 0 or total < group_count:
+        raise ValueError(f"invalid total={total} group_count={group_count}")
+    base = total // group_count
+    remainder = total % group_count
+    return [base + 1 if g < remainder else base for g in range(group_count)]
+
+
 def load_participants_from_csv(path):
     """CSV에서 참가자 목록을 읽어옵니다. 컬럼: knox_id, name, group(선택)
-    group 컬럼이 있고 값이 1~10이면 해당 조의 첫 번째 주자로 고정됩니다.
+    group 컬럼이 있고 값이 1 이상이면 해당 조의 첫 번째 주자로 고정됩니다.
     반환: (first_players dict {group_id: member}, 일반참가자 list)
     """
-    first_players = {}  # {group_id: member}
+    first_players = {}
     participants = []
     with open(path, 'r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
@@ -41,15 +53,14 @@ def load_participants_from_csv(path):
                 'name': row.get('name', row.get('이름', '')).strip(),
             }
             group_val = row.get('group', '').strip()
-            if group_val.isdigit() and 1 <= int(group_val) <= NUM_GROUPS:
+            if group_val.isdigit() and int(group_val) >= 1:
                 first_players[int(group_val)] = member
             else:
                 participants.append(member)
     return first_players, participants
 
 
-def generate_test_participants(n=TOTAL_PARTICIPANTS):
-    """테스트용 참가자 데이터 생성."""
+def generate_test_participants(n=DEFAULT_TOTAL):
     participants = []
     for i in range(1, n + 1):
         participants.append({
@@ -59,16 +70,102 @@ def generate_test_participants(n=TOTAL_PARTICIPANTS):
     return participants
 
 
-def init_database():
-    # Flask 앱 컨텍스트에서 DB 생성
+def _write_first_player_file(first_player_lines, path):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write("코딩 에이전트 릴레이 챌린지 - 첫 번째 주자 비밀번호\n")
+        f.write("=" * 60 + "\n\n")
+        for line in first_player_lines:
+            f.write(line + "\n")
+        f.write("\n" + "=" * 60 + "\n")
+        f.write("이 비밀번호를 각 조의 첫 번째 주자에게 전달하세요.\n")
+
+
+def _write_roster_file(group_roster, path):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write("=" * 80 + "\n")
+        f.write("코딩 에이전트 릴레이 챌린지 - 조별 주자 순서 (비상용)\n")
+        f.write("=" * 80 + "\n")
+        f.write("※ 시스템 장애 시 이 파일을 보고 수동으로 진행할 수 있습니다.\n")
+        f.write("※ 정답이 포함되어 있으므로 참가자에게 공유하지 마세요.\n")
+        f.write("=" * 80 + "\n\n")
+        for g_id, members in group_roster.items():
+            f.write(f"[ 조 {g_id} ]\n")
+            f.write(f"{'순서':>4}  {'이름':<20}  {'Knox-ID':<20}  {'정답'}\n")
+            f.write("-" * 70 + "\n")
+            for m in members:
+                f.write(f"{m['order']:>4}  {m['name']:<20}  {m['knox_id']:<20}  {m['answer']}\n")
+            f.write("\n")
+        f.write("=" * 80 + "\n")
+
+
+def init_database(
+    group_count: int = DEFAULT_NUM_GROUPS,
+    group_sizes: list[int] | None = None,
+    ordered_participants: list[dict] | None = None,
+    regen_challenge_data: bool = False,
+) -> dict:
+    """
+    DB를 삭제 후 재생성하고 참가자·조·문제를 배정한다.
+
+    group_sizes=None 이면 group_count에 따라 균등 분배(+나머지는 앞 조부터).
+    ordered_participants=None 이면 기존 CSV + random.shuffle 로직으로 폴백 (CLI 하위호환).
+
+    반환: {
+        'first_player_lines': [...],
+        'roster_path': str,
+        'runners': int,
+        'groups': int,
+    }
+    """
     sys.path.insert(0, BASE_DIR)
-    from app import create_app
     from models import db, Group, Runner
+    from flask import current_app, has_app_context
 
-    app = create_app()
+    # ordered_participants가 주어지면 N도 거기서 도출
+    if ordered_participants is not None:
+        total = len(ordered_participants)
+    else:
+        total = sum(group_sizes) if group_sizes else DEFAULT_TOTAL
 
-    with app.app_context():
-        # 기존 DB 삭제 후 재생성
+    if group_sizes is None:
+        group_sizes = compute_group_sizes(total, group_count)
+    else:
+        if len(group_sizes) != group_count:
+            raise ValueError(
+                f"group_sizes 길이({len(group_sizes)}) != group_count({group_count})"
+            )
+        if sum(group_sizes) != total:
+            raise ValueError(
+                f"group_sizes 합({sum(group_sizes)}) != total({total})"
+            )
+
+    # 문제 풀 재생성 (필요 시)
+    if regen_challenge_data:
+        print(f"challenge_data.dat 재생성 (N={total})...")
+        generate_main(
+            total_problems=total,
+            output_path=os.path.join(BASE_DIR, "challenge_data.dat"),
+            excel_path=os.path.join(BASE_DIR, "challenge_admin.xlsx"),
+        )
+
+    # Flask 앱 컨텍스트가 이미 있으면 재사용(웹 경로), 없으면 새로 생성(CLI 경로)
+    from contextlib import nullcontext
+    if has_app_context():
+        app = current_app._get_current_object()
+        ctx = nullcontext()
+    else:
+        from app import create_app
+        app = create_app()
+        ctx = app.app_context()
+
+    first_player_lines: list[str] = []
+    group_roster: dict[int, list] = {}
+
+    with ctx:
+        # 기존 DB 삭제 후 재생성 — Windows에서 파일 잠금 해제
+        db.session.remove()
+        db.engine.dispose()
         db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
         if os.path.exists(db_path):
             os.remove(db_path)
@@ -77,74 +174,93 @@ def init_database():
         db.create_all()
         print("DB 테이블 생성 완료")
 
-        # 1. 참가자 로드
-        if os.path.exists(CSV_PATH):
-            first_players, participants = load_participants_from_csv(CSV_PATH)
-            print(f"CSV에서 고정 첫번째 주자 {len(first_players)}명, 일반 참가자 {len(participants)}명 로드")
-        else:
-            first_players = {}
-            participants = generate_test_participants()
-            print(f"테스트 참가자 {len(participants)}명 생성")
+        try:
+            # 1. 문제 로드 (total개)
+            print(f"{total}개 문제 로드 중...")
+            problems = get_all_problems(total_problems=total)
+            if len(problems) < total:
+                raise RuntimeError(
+                    f"문제 부족: 요청 {total}개, 생성 {len(problems)}개. "
+                    "regen_challenge_data=True 로 재생성하세요."
+                )
+            print(f"  {len(problems)}개 문제 준비 완료")
 
-        # 고정 첫번째 주자가 없는 조는 일반 참가자에서 채워야 하므로 총 필요 인원 계산
-        remaining_needed = TOTAL_PARTICIPANTS - len(first_players)
-        if len(participants) < remaining_needed:
-            print(f"경고: 일반 참가자 {len(participants)}명 < 필요 {remaining_needed}명")
-            for i in range(len(participants) + 1, remaining_needed + 1):
-                participants.append({
-                    'knox_id': f'extra{i:03d}',
-                    'name': f'추가참가자{i:03d}',
-                })
-
-        participants = participants[:remaining_needed]
-
-        # 2. 문제 로드
-        print("130개 문제 생성 중...")
-        problems = get_all_problems()
-        print(f"  {len(problems)}개 문제 준비 완료")
-
-        # 3. 일반 참가자만 랜덤으로 섞기
-        random.seed(2026)
-        random.shuffle(participants)
-
-        # 4. 조 생성 및 참가자 배정
-        first_player_lines = []
-        group_roster = {}  # 조별 주자 순서 기록
-        regular_idx = 0  # 일반 참가자 인덱스
-
-        for g in range(NUM_GROUPS):
-            group = Group(id=g + 1, name=f"조 {g + 1}")
-            db.session.add(group)
-            group_roster[g + 1] = []
-
-            # 첫 번째 주자: 고정 지정 or 일반 참가자에서 배정
-            if (g + 1) in first_players:
-                fixed_first = first_players[g + 1]
-                group_members = [fixed_first] + participants[regular_idx:regular_idx + PARTICIPANTS_PER_GROUP - 1]
-                regular_idx += PARTICIPANTS_PER_GROUP - 1
+            # 2. 참가자 순서 확정
+            if ordered_participants is not None:
+                # 웹 경로: 이미 확정된 순서 그대로 사용
+                final_order = ordered_participants
             else:
-                group_members = participants[regular_idx:regular_idx + PARTICIPANTS_PER_GROUP]
-                regular_idx += PARTICIPANTS_PER_GROUP
+                # CLI 폴백: CSV + random.shuffle
+                if os.path.exists(CSV_PATH):
+                    first_players, participants = load_participants_from_csv(CSV_PATH)
+                    print(f"CSV에서 고정 첫번째 주자 {len(first_players)}명, 일반 참가자 {len(participants)}명 로드")
+                else:
+                    first_players = {}
+                    participants = generate_test_participants(total)
+                    print(f"테스트 참가자 {len(participants)}명 생성")
 
-            for order, member in enumerate(group_members, 1):
-                problem_idx = g * PARTICIPANTS_PER_GROUP + (order - 1)
+                remaining_needed = total - len(first_players)
+                if len(participants) < remaining_needed:
+                    print(f"경고: 일반 참가자 {len(participants)}명 < 필요 {remaining_needed}명")
+                    for i in range(len(participants) + 1, remaining_needed + 1):
+                        participants.append({
+                            'knox_id': f'extra{i:03d}',
+                            'name': f'추가참가자{i:03d}',
+                        })
+                participants = participants[:remaining_needed]
+
+                random.seed(2026)
+                random.shuffle(participants)
+
+                # 조별로 정원만큼 배정, 고정 1번 주자는 앞에
+                final_order = []
+                regular_idx = 0
+                for g in range(group_count):
+                    size = group_sizes[g]
+                    if (g + 1) in first_players:
+                        fixed = first_players[g + 1]
+                        members = [fixed] + participants[regular_idx:regular_idx + size - 1]
+                        regular_idx += size - 1
+                    else:
+                        members = participants[regular_idx:regular_idx + size]
+                        regular_idx += size
+                    for order, m in enumerate(members, 1):
+                        final_order.append({
+                            'knox_id': m['knox_id'],
+                            'name': m['name'],
+                            'group': g + 1,
+                            'order': order,
+                        })
+
+            # 3. 조 생성 및 Runner 레코드 삽입
+            for g in range(group_count):
+                group = Group(id=g + 1, name=f"조 {g + 1}")
+                db.session.add(group)
+                group_roster[g + 1] = []
+
+            # 조별 시작 인덱스 (문제 배정용)
+            group_offsets = [sum(group_sizes[:g]) for g in range(group_count)]
+
+            for entry in final_order:
+                g_id = entry['group']
+                order = entry['order']
+                problem_idx = group_offsets[g_id - 1] + (order - 1)
                 problem = problems[problem_idx]
 
-                # 첫 번째 주자는 초기 비밀번호 생성, status='active'
                 if order == 1:
                     password = generate_password()
                     status = 'active'
                     first_player_lines.append(
-                        f"조 {g + 1} | {member['name']} ({member['knox_id']}) | 비밀번호: {password}"
+                        f"조 {g_id} | {entry['name']} ({entry['knox_id']}) | 비밀번호: {password}"
                     )
                 else:
-                    password = ''  # 이전 주자가 완료해야 생성됨
+                    password = ''
                     status = 'waiting'
 
                 runner = Runner(
-                    knox_id=member['knox_id'],
-                    name=member['name'],
-                    group_id=g + 1,
+                    knox_id=entry['knox_id'],
+                    name=entry['name'],
+                    group_id=g_id,
                     run_order=order,
                     password=password,
                     problem_text=problem.text,
@@ -154,56 +270,44 @@ def init_database():
                 )
                 db.session.add(runner)
 
-                group_roster[g + 1].append({
+                group_roster[g_id].append({
                     'order': order,
-                    'name': member['name'],
-                    'knox_id': member['knox_id'],
+                    'name': entry['name'],
+                    'knox_id': entry['knox_id'],
                     'answer': problem.answer,
                 })
 
-        db.session.commit()
-        print(f"\n{NUM_GROUPS}개 조, {TOTAL_PARTICIPANTS}명 배정 완료")
+            db.session.commit()
+            print(f"\n{group_count}개 조, {total}명 배정 완료")
 
-        # 5. firstPlayer.txt 생성
+        except Exception:
+            db.session.rollback()
+            raise
+
+        # 4. 파일 생성
         first_player_path = os.path.join(BASE_DIR, 'firstPlayer.txt')
-        with open(first_player_path, 'w', encoding='utf-8') as f:
-            f.write("=" * 60 + "\n")
-            f.write("코딩 에이전트 릴레이 챌린지 - 첫 번째 주자 비밀번호\n")
-            f.write("=" * 60 + "\n\n")
-            for line in first_player_lines:
-                f.write(line + "\n")
-            f.write("\n" + "=" * 60 + "\n")
-            f.write("이 비밀번호를 각 조의 첫 번째 주자에게 전달하세요.\n")
-        print(f"\nfirstPlayer.txt 생성 완료")
+        _write_first_player_file(first_player_lines, first_player_path)
+        print(f"firstPlayer.txt 생성 완료")
 
-        # 6. groupRoster.txt 생성 (조별 전체 주자 순서 + 정답)
         roster_path = os.path.join(BASE_DIR, 'groupRoster.txt')
-        with open(roster_path, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write("코딩 에이전트 릴레이 챌린지 - 조별 주자 순서 (비상용)\n")
-            f.write("=" * 80 + "\n")
-            f.write("※ 시스템 장애 시 이 파일을 보고 수동으로 진행할 수 있습니다.\n")
-            f.write("※ 정답이 포함되어 있으므로 참가자에게 공유하지 마세요.\n")
-            f.write("=" * 80 + "\n\n")
-            for g_id, members in group_roster.items():
-                f.write(f"[ 조 {g_id} ]\n")
-                f.write(f"{'순서':>4}  {'이름':<20}  {'Knox-ID':<20}  {'정답'}\n")
-                f.write("-" * 70 + "\n")
-                for m in members:
-                    f.write(f"{m['order']:>4}  {m['name']:<20}  {m['knox_id']:<20}  {m['answer']}\n")
-                f.write("\n")
-            f.write("=" * 80 + "\n")
+        _write_roster_file(group_roster, roster_path)
         print(f"groupRoster.txt 생성 완료")
 
-        # 7. 요약 출력
+        # 5. 요약
         print("\n" + "=" * 60)
         print("초기화 완료 요약")
         print("=" * 60)
         for line in first_player_lines:
             print(f"  {line}")
         print(f"\n[조별 주자 순서] groupRoster.txt에 저장됨")
-        print("  → 시스템 장애 시 수동 진행용 (정답 포함)")
         print("=" * 60)
+
+    return {
+        'first_player_lines': first_player_lines,
+        'roster_path': roster_path,
+        'runners': total,
+        'groups': group_count,
+    }
 
 
 if __name__ == '__main__':

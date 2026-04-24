@@ -3,6 +3,7 @@
 코딩 에이전트 릴레이 설치 챌린지 - Flask 웹 애플리케이션
 """
 
+import json
 import os
 import secrets
 import string
@@ -13,6 +14,51 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, send_file, jsonify, abort, make_response)
 from models import db, Group, Runner, AttemptLog
 import config
+
+
+# ============================================================
+# 설정 파일 (초기화 마법사에서 쓰이는 운영 옵션)
+# ============================================================
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
+DEFAULT_SETTINGS = {
+    'show_individual_ranking': True,
+    'challenge_opened': False,   # 참가자에게 공개 여부. 관리자가 명시적으로 열어야 함.
+}
+
+
+def _read_settings() -> dict:
+    try:
+        with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return {**DEFAULT_SETTINGS, **data}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(DEFAULT_SETTINGS)
+
+
+def _write_settings(data: dict) -> None:
+    merged = {**DEFAULT_SETTINGS, **_read_settings(), **data}
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
+
+
+def _is_challenge_open() -> bool:
+    """챌린지가 참가자에게 공개되어 있는지. 초기화 전이거나 관리자가 닫은 상태면 False."""
+    try:
+        if Runner.query.count() == 0:
+            return False
+    except Exception:
+        return False
+    return _read_settings().get('challenge_opened', False)
+
+
+def challenge_open_required(f):
+    """챌린지가 열려 있지 않으면 coming_soon 페이지를 렌더."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _is_challenge_open():
+            return render_template('coming_soon.html'), 200
+        return f(*args, **kwargs)
+    return decorated
 
 
 def create_app():
@@ -169,6 +215,7 @@ def _is_ajax():
 # 공개 라우트
 # ============================================================
 @app.route('/')
+@challenge_open_required
 def index():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
@@ -180,6 +227,7 @@ def index():
 
 
 @app.route('/login', methods=['POST'])
+@challenge_open_required
 def login():
     knox_id = request.form.get('knox_id', '').strip()
     password = request.form.get('password', '').strip()
@@ -387,20 +435,26 @@ def get_individual_rankings(limit=20):
 
 
 @app.route('/leaderboard')
+@challenge_open_required
 def leaderboard():
     rankings = get_group_rankings()
-    individuals = get_individual_rankings(limit=10)
+    settings = _read_settings()
+    show_individual = settings.get('show_individual_ranking', True)
+    individuals = get_individual_rankings(limit=10) if show_individual else []
     return render_template('leaderboard.html',
                            rankings=rankings,
-                           individuals=individuals)
+                           individuals=individuals,
+                           show_individual=show_individual)
 
 
 @app.route('/guide')
+@challenge_open_required
 def guide():
     return render_template('guide.html')
 
 
 @app.route('/download/challenge_data')
+@challenge_open_required
 def download_challenge_data():
     path = config.CHALLENGE_DATA_PATH
     if not os.path.exists(path):
@@ -409,6 +463,7 @@ def download_challenge_data():
 
 
 @app.route('/api/leaderboard')
+@challenge_open_required
 def api_leaderboard():
     rankings = get_group_rankings()
     data = []
@@ -464,13 +519,17 @@ def admin_dashboard():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
     total_runners = sum(r['total'] for r in rankings)
+    challenge_opened = _is_challenge_open()
+    initialized = Runner.query.count() > 0
 
     return render_template('admin_dashboard.html',
                            groups=groups,
                            grouped=grouped,
                            rankings=rankings,
                            total_completed=total_completed,
-                           total_runners=total_runners)
+                           total_runners=total_runners,
+                           challenge_opened=challenge_opened,
+                           initialized=initialized)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -661,7 +720,367 @@ def admin_api_status():
 @app.route('/admin/logout')
 def admin_logout():
     session.pop('is_admin', None)
-    return redirect(url_for('index'))
+    return redirect(url_for('admin_login'))
+
+
+@app.route('/admin/toggle-open', methods=['POST'])
+@admin_required
+def admin_toggle_open():
+    """챌린지 공개/비공개 토글. 초기화 전(Runner 0)이면 열 수 없음."""
+    if Runner.query.count() == 0:
+        if _is_ajax():
+            return jsonify({'ok': False, 'message': '초기화가 완료되지 않았습니다.'}), 400
+        flash('초기화가 완료되지 않았습니다.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
+    settings = _read_settings()
+    new_state = not settings.get('challenge_opened', False)
+    _write_settings({'challenge_opened': new_state})
+
+    if _is_ajax():
+        return jsonify({'ok': True, 'opened': new_state})
+    flash('챌린지를 공개했습니다.' if new_state else '챌린지를 비공개로 전환했습니다.', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+
+# ============================================================
+# /admin/init - 챌린지 초기화 마법사
+# ============================================================
+INIT_N_MIN, INIT_N_MAX = 2, 500
+INIT_G_MIN, INIT_G_MAX = 2, 50
+
+
+def _parse_csv_text(csv_text: str) -> tuple[list[dict], list[dict]]:
+    """CSV 텍스트 파싱. 쉼표·탭 둘 다 허용, 헤더 자동 감지.
+    반환: (participants, errors) — errors는 파싱 수준 오류만 (행 단위 검증은 상위에서)
+    """
+    participants: list[dict] = []
+    errors: list[dict] = []
+
+    lines = [ln for ln in csv_text.splitlines() if ln.strip()]
+    if not lines:
+        return participants, [{'row': 0, 'message': 'CSV가 비어 있습니다.'}]
+
+    def split_fields(line: str) -> list[str]:
+        # 탭이 있으면 탭 우선, 아니면 쉼표
+        if '\t' in line:
+            return [c.strip() for c in line.split('\t')]
+        return [c.strip() for c in line.split(',')]
+
+    header_fields = split_fields(lines[0])
+    lower = [h.lower() for h in header_fields]
+    has_header = any(
+        key in lower or key in header_fields
+        for key in ('knox_id', 'knox-id', 'name', '이름')
+    )
+
+    if has_header:
+        # 헤더 기반 컬럼 매핑
+        col_knox = None
+        col_name = None
+        for i, h in enumerate(header_fields):
+            hl = h.lower()
+            if hl in ('knox_id', 'knox-id'):
+                col_knox = i
+            elif hl in ('name', '이름'):
+                col_name = i
+        if col_knox is None or col_name is None:
+            return participants, [{
+                'row': 1,
+                'message': '헤더에 knox_id, name 컬럼이 모두 필요합니다.',
+            }]
+        data_lines = lines[1:]
+        row_offset = 2  # 1 = 헤더, 2부터 데이터
+    else:
+        col_knox, col_name = 0, 1
+        data_lines = lines
+        row_offset = 1
+
+    for i, line in enumerate(data_lines):
+        fields = split_fields(line)
+        if len(fields) < max(col_knox, col_name) + 1:
+            errors.append({'row': row_offset + i, 'message': '컬럼 부족'})
+            continue
+        knox_id = fields[col_knox].strip().lower()
+        name = fields[col_name].strip()
+        if not knox_id:
+            errors.append({'row': row_offset + i, 'message': '빈 knox_id'})
+            continue
+        if not name:
+            errors.append({'row': row_offset + i, 'message': '빈 name'})
+            continue
+        participants.append({'knox_id': knox_id, 'name': name})
+
+    return participants, errors
+
+
+def _compute_group_sizes(total: int, group_count: int) -> list[int]:
+    from init_db import compute_group_sizes as _c
+    return _c(total, group_count)
+
+
+def _current_problem_pool_size() -> int:
+    """현재 challenge_data.dat(풀)에 몇 개의 문제가 들어있는지 기록.
+    실제 풀 크기 계산은 비용이 커서 메타 정보를 쓰거나 제너레이터 호출 필요.
+    여기서는 DEFAULT_TOTAL_PROBLEMS 기준으로 안내용 반환."""
+    from generate_challenge import DEFAULT_TOTAL_PROBLEMS
+    return DEFAULT_TOTAL_PROBLEMS
+
+
+@app.route('/admin/init')
+@admin_required
+def admin_init():
+    return render_template(
+        'admin_init.html',
+        n_min=INIT_N_MIN, n_max=INIT_N_MAX,
+        g_min=INIT_G_MIN, g_max=INIT_G_MAX,
+        default_n=130, default_g=10,
+        problem_pool_size=_current_problem_pool_size(),
+    )
+
+
+@app.route('/admin/init/parse', methods=['POST'])
+@admin_required
+def admin_init_parse():
+    data = request.get_json(silent=True) or {}
+    csv_text = (data.get('csv_text') or '').strip()
+    try:
+        total_n = int(data.get('total_n', 0))
+        group_count = int(data.get('group_count', 0))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'errors': [{'row': 0, 'message': 'N/G 정수 아님'}]}), 400
+
+    # N, G 범위 검증
+    errors: list[dict] = []
+    if not (INIT_N_MIN <= total_n <= INIT_N_MAX):
+        errors.append({'row': 0, 'message': f'전체 인원수는 {INIT_N_MIN}~{INIT_N_MAX} 범위여야 합니다.'})
+    if not (INIT_G_MIN <= group_count <= INIT_G_MAX):
+        errors.append({'row': 0, 'message': f'조 수는 {INIT_G_MIN}~{INIT_G_MAX} 범위여야 합니다.'})
+    if group_count > total_n:
+        errors.append({'row': 0, 'message': '조 수가 전체 인원수보다 클 수 없습니다.'})
+    if errors:
+        return jsonify({'ok': False, 'errors': errors, 'duplicates': []}), 400
+
+    # CSV 파싱
+    participants, parse_errors = _parse_csv_text(csv_text)
+    if parse_errors:
+        return jsonify({'ok': False, 'errors': parse_errors, 'duplicates': []}), 400
+
+    # 중복 knox_id 검사
+    seen: dict[str, int] = {}
+    duplicates: list[str] = []
+    for idx, p in enumerate(participants, start=1):
+        if p['knox_id'] in seen:
+            if p['knox_id'] not in duplicates:
+                duplicates.append(p['knox_id'])
+        else:
+            seen[p['knox_id']] = idx
+    if duplicates:
+        return jsonify({
+            'ok': False,
+            'errors': [{'row': 0, 'message': f'중복 knox_id: {", ".join(duplicates)}'}],
+            'duplicates': duplicates,
+        }), 400
+
+    # 행 수 vs N 경고 (차단은 아님 — 상위에서 선택)
+    warnings: list[str] = []
+    if len(participants) != total_n:
+        warnings.append(
+            f'CSV 행 수({len(participants)})가 전체 인원수({total_n})와 다릅니다. '
+            '앞 N명만 사용하거나 부족분은 extra###로 채워집니다.'
+        )
+        # 자동 조정
+        if len(participants) > total_n:
+            participants = participants[:total_n]
+        else:
+            for i in range(len(participants) + 1, total_n + 1):
+                participants.append({'knox_id': f'extra{i:03d}', 'name': f'추가참가자{i:03d}'})
+
+    group_sizes = _compute_group_sizes(total_n, group_count)
+    return jsonify({
+        'ok': True,
+        'participants': participants,
+        'group_sizes': group_sizes,
+        'problem_pool_size': _current_problem_pool_size(),
+        'warnings': warnings,
+    })
+
+
+@app.route('/admin/init/commit', methods=['POST'])
+@admin_required
+def admin_init_commit():
+    data = request.get_json(silent=True) or {}
+
+    # 1) INIT 확인 문자열
+    if (data.get('confirm') or '') != 'INIT':
+        return jsonify({
+            'ok': False,
+            'error_code': 'CONFIRM_MISMATCH',
+            'message': 'INIT 을 정확히 입력해야 합니다.',
+        }), 400
+
+    # 2) 파라미터 검증
+    try:
+        group_count = int(data.get('group_count', 0))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION', 'message': 'group_count 정수 아님'}), 400
+    group_sizes = data.get('group_sizes') or []
+    if not isinstance(group_sizes, list) or len(group_sizes) != group_count:
+        return jsonify({'ok': False, 'error_code': 'VALIDATION', 'message': 'group_sizes 불일치'}), 400
+    try:
+        group_sizes = [int(x) for x in group_sizes]
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION', 'message': 'group_sizes 정수 아님'}), 400
+
+    ordered = data.get('ordered_participants') or []
+    if not isinstance(ordered, list) or len(ordered) != sum(group_sizes):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': f'ordered_participants 길이({len(ordered)}) != sum(group_sizes)({sum(group_sizes)})'}), 400
+
+    total_n = len(ordered)
+    if not (INIT_N_MIN <= total_n <= INIT_N_MAX):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': f'전체 인원 {INIT_N_MIN}~{INIT_N_MAX} 범위 벗어남'}), 400
+    if not (INIT_G_MIN <= group_count <= INIT_G_MAX):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': f'조 수 {INIT_G_MIN}~{INIT_G_MAX} 범위 벗어남'}), 400
+
+    # 중복/빈값 재검증
+    seen = set()
+    for p in ordered:
+        kid = (p.get('knox_id') or '').strip().lower()
+        name = (p.get('name') or '').strip()
+        if not kid or not name:
+            return jsonify({'ok': False, 'error_code': 'VALIDATION', 'message': '빈 knox_id/name 포함'}), 400
+        if kid in seen:
+            return jsonify({'ok': False, 'error_code': 'VALIDATION', 'message': f'중복 knox_id: {kid}'}), 400
+        seen.add(kid)
+
+    # 3) 진행 중 주자 체크
+    force = bool(data.get('force', False))
+    try:
+        in_progress = Runner.query.filter(Runner.started_at.isnot(None)).count()
+    except Exception:
+        # 테이블 없음 (최초 초기화 전) → 진행 중 아님
+        in_progress = 0
+    if in_progress > 0 and not force:
+        return jsonify({
+            'ok': False,
+            'error_code': 'IN_PROGRESS',
+            'message': f'진행 중인 주자 {in_progress}명이 있습니다. 강제 실행 체크 후 재시도하세요.',
+        }), 409
+
+    # 4) 풀 크기 확인
+    regen = bool(data.get('regen_challenge_data', False))
+    pool_size = _current_problem_pool_size()
+    if total_n > pool_size and not regen:
+        return jsonify({
+            'ok': False,
+            'error_code': 'POOL_TOO_SMALL',
+            'message': f'N={total_n}이 풀({pool_size})보다 큽니다. challenge_data.dat 재생성 체크 필요.',
+        }), 400
+
+    # 5) ordered_participants 정규화 (knox_id 소문자, group/order 정수)
+    norm_ordered = []
+    for p in ordered:
+        norm_ordered.append({
+            'knox_id': (p.get('knox_id') or '').strip().lower(),
+            'name':    (p.get('name') or '').strip(),
+            'group':   int(p.get('group', 0)),
+            'order':   int(p.get('order', 0)),
+        })
+
+    # 운영 옵션 (리더보드 개인 랭킹 공개 여부 등)
+    show_individual = bool(data.get('show_individual_ranking', True))
+
+    # 6) init_database 실행 — 세션/엔진을 먼저 닫아야 Windows에서 DB 파일 삭제 가능
+    db.session.remove()
+    db.engine.dispose()
+
+    from init_db import init_database
+    try:
+        result = init_database(
+            group_count=group_count,
+            group_sizes=group_sizes,
+            ordered_participants=norm_ordered,
+            regen_challenge_data=regen,
+        )
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'error_code': 'INTERNAL',
+            'message': f'초기화 실패: {type(e).__name__}: {e}',
+        }), 500
+
+    # 7) 운영 옵션 저장 (DB 초기화와 독립)
+    # 초기화 직후에는 항상 비공개 상태로 리셋 — 관리자가 명시적으로 "공개"해야 참가자 접근 가능
+    try:
+        _write_settings({
+            'show_individual_ranking': show_individual,
+            'challenge_opened': False,
+        })
+    except OSError:
+        pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
+
+    return jsonify({
+        'ok': True,
+        'first_player_lines': result['first_player_lines'],
+        'summary': {
+            'groups': result['groups'],
+            'runners': result['runners'],
+            'problems': result['runners'],
+        },
+    })
+
+
+@app.route('/admin/init/download/<kind>')
+@admin_required
+def admin_init_download(kind):
+    mapping = {
+        'first-player':   ('firstPlayer.txt',     'text/plain'),
+        'roster':         ('groupRoster.txt',     'text/plain'),
+        'challenge-data': ('challenge_data.dat',  'application/octet-stream'),
+        'relay-db':       ('relay.db',            'application/x-sqlite3'),
+    }
+    if kind not in mapping:
+        abort(404)
+    filename, mime = mapping[kind]
+    path = os.path.join(os.path.dirname(__file__), filename)
+    if not os.path.exists(path):
+        abort(404, description=f'{filename} 없음 (초기화 먼저 실행)')
+
+    # SQLite DB는 사용 중일 수 있으므로 backup API로 일관된 스냅샷을 만들어 전송
+    if kind == 'relay-db':
+        import sqlite3
+        import tempfile
+        from flask import after_this_request
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.db')
+        os.close(tmp_fd)
+        try:
+            src = sqlite3.connect(path)
+            dst = sqlite3.connect(tmp_path)
+            with dst:
+                src.backup(dst)
+            dst.close()
+            src.close()
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+
+        @after_this_request
+        def _cleanup(response):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return response
+
+        return send_file(tmp_path, as_attachment=True, download_name=filename, mimetype=mime)
+
+    return send_file(path, as_attachment=True, download_name=filename, mimetype=mime)
 
 
 # ============================================================

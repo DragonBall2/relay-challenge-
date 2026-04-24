@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}챌린지 준비 중{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center" style="margin-top: 4rem;">
+  <div class="col-lg-7 col-md-9">
+    <div class="card" style="text-align: center; padding: 3rem 2rem;">
+      <div style="font-size: 4rem; margin-bottom: 1rem;">⏳</div>
+      <h2 style="font-weight: 800; margin-bottom: 1rem;">챌린지 준비 중입니다</h2>
+      <p style="color: var(--text-secondary); font-size: 1.05rem; line-height: 1.6;">
+        운영자가 챌린지를 공개하면 이 페이지에서 바로 시작하실 수 있습니다.<br>
+        조금만 기다려 주세요.
+      </p>
+      <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 1.5rem;">
+        공지된 시작 시각까지 이 페이지를 새로고침하며 대기해 주세요.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 30초마다 자동 새로고침 (공개 전환 감지)
+setTimeout(() => { location.reload(); }, 30000);
+</script>
+{% endblock %}
