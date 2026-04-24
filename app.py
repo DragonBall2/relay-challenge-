@@ -20,7 +20,10 @@ import config
 # 설정 파일 (초기화 마법사에서 쓰이는 운영 옵션)
 # ============================================================
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
-DEFAULT_SETTINGS = {'show_individual_ranking': True}
+DEFAULT_SETTINGS = {
+    'show_individual_ranking': True,
+    'challenge_opened': False,   # 참가자에게 공개 여부. 관리자가 명시적으로 열어야 함.
+}
 
 
 def _read_settings() -> dict:
@@ -33,9 +36,29 @@ def _read_settings() -> dict:
 
 
 def _write_settings(data: dict) -> None:
-    merged = {**DEFAULT_SETTINGS, **data}
+    merged = {**DEFAULT_SETTINGS, **_read_settings(), **data}
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
+
+
+def _is_challenge_open() -> bool:
+    """챌린지가 참가자에게 공개되어 있는지. 초기화 전이거나 관리자가 닫은 상태면 False."""
+    try:
+        if Runner.query.count() == 0:
+            return False
+    except Exception:
+        return False
+    return _read_settings().get('challenge_opened', False)
+
+
+def challenge_open_required(f):
+    """챌린지가 열려 있지 않으면 coming_soon 페이지를 렌더."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not _is_challenge_open():
+            return render_template('coming_soon.html'), 200
+        return f(*args, **kwargs)
+    return decorated
 
 
 def create_app():
@@ -192,6 +215,7 @@ def _is_ajax():
 # 공개 라우트
 # ============================================================
 @app.route('/')
+@challenge_open_required
 def index():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
@@ -203,6 +227,7 @@ def index():
 
 
 @app.route('/login', methods=['POST'])
+@challenge_open_required
 def login():
     knox_id = request.form.get('knox_id', '').strip()
     password = request.form.get('password', '').strip()
@@ -410,6 +435,7 @@ def get_individual_rankings(limit=20):
 
 
 @app.route('/leaderboard')
+@challenge_open_required
 def leaderboard():
     rankings = get_group_rankings()
     settings = _read_settings()
@@ -422,11 +448,13 @@ def leaderboard():
 
 
 @app.route('/guide')
+@challenge_open_required
 def guide():
     return render_template('guide.html')
 
 
 @app.route('/download/challenge_data')
+@challenge_open_required
 def download_challenge_data():
     path = config.CHALLENGE_DATA_PATH
     if not os.path.exists(path):
@@ -435,6 +463,7 @@ def download_challenge_data():
 
 
 @app.route('/api/leaderboard')
+@challenge_open_required
 def api_leaderboard():
     rankings = get_group_rankings()
     data = []
@@ -490,13 +519,17 @@ def admin_dashboard():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
     total_runners = sum(r['total'] for r in rankings)
+    challenge_opened = _is_challenge_open()
+    initialized = Runner.query.count() > 0
 
     return render_template('admin_dashboard.html',
                            groups=groups,
                            grouped=grouped,
                            rankings=rankings,
                            total_completed=total_completed,
-                           total_runners=total_runners)
+                           total_runners=total_runners,
+                           challenge_opened=challenge_opened,
+                           initialized=initialized)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -687,7 +720,27 @@ def admin_api_status():
 @app.route('/admin/logout')
 def admin_logout():
     session.pop('is_admin', None)
-    return redirect(url_for('index'))
+    return redirect(url_for('admin_login'))
+
+
+@app.route('/admin/toggle-open', methods=['POST'])
+@admin_required
+def admin_toggle_open():
+    """챌린지 공개/비공개 토글. 초기화 전(Runner 0)이면 열 수 없음."""
+    if Runner.query.count() == 0:
+        if _is_ajax():
+            return jsonify({'ok': False, 'message': '초기화가 완료되지 않았습니다.'}), 400
+        flash('초기화가 완료되지 않았습니다.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
+    settings = _read_settings()
+    new_state = not settings.get('challenge_opened', False)
+    _write_settings({'challenge_opened': new_state})
+
+    if _is_ajax():
+        return jsonify({'ok': True, 'opened': new_state})
+    flash('챌린지를 공개했습니다.' if new_state else '챌린지를 비공개로 전환했습니다.', 'success')
+    return redirect(url_for('admin_dashboard'))
 
 
 # ============================================================
@@ -960,8 +1013,12 @@ def admin_init_commit():
         }), 500
 
     # 7) 운영 옵션 저장 (DB 초기화와 독립)
+    # 초기화 직후에는 항상 비공개 상태로 리셋 — 관리자가 명시적으로 "공개"해야 참가자 접근 가능
     try:
-        _write_settings({'show_individual_ranking': show_individual})
+        _write_settings({
+            'show_individual_ranking': show_individual,
+            'challenge_opened': False,
+        })
     except OSError:
         pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
 

@@ -3,10 +3,40 @@
 {% block title %}관리자 대시보드{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2 style="font-weight: 800;">관리자 대시보드</h2>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-3">
+        <h2 class="mb-0" style="font-weight: 800;">관리자 대시보드</h2>
+        {% if not initialized %}
+        <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+            ⚠ 초기화 필요
+        </span>
+        {% elif challenge_opened %}
+        <span class="badge bg-success" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;">
+            🟢 공개 중
+        </span>
+        {% else %}
+        <span class="badge bg-warning" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; color: #000;">
+            🔒 비공개 (준비 중)
+        </span>
+        {% endif %}
+    </div>
     <div>
         <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">5초마다 자동 갱신</span>
+        {% if initialized %}
+        <form method="POST" action="{{ url_for('admin_toggle_open') }}" class="d-inline ms-2">
+            {% if challenge_opened %}
+            <button type="submit" class="btn btn-outline-warning btn-sm"
+                    onclick="return confirm('챌린지를 비공개로 전환할까요? 참가자들이 즉시 준비 중 페이지를 보게 됩니다.');">
+                🔒 비공개로 전환
+            </button>
+            {% else %}
+            <button type="submit" class="btn btn-success btn-sm"
+                    onclick="return confirm('챌린지를 공개할까요? 참가자들이 즉시 접속 가능해집니다.');">
+                🟢 공개하기
+            </button>
+            {% endif %}
+        </form>
+        {% endif %}
         <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="btn-view-first-player">firstPlayer.txt</button>
         <button type="button" class="btn btn-outline-secondary btn-sm ms-1" id="btn-view-roster">groupRoster.txt</button>
         <a href="{{ url_for('admin_init_download', kind='challenge-data') }}" class="btn btn-outline-secondary btn-sm ms-1">challenge_data.dat</a>
