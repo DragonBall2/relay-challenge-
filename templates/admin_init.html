@@ -345,6 +345,13 @@
   // ----- 2단계: 주자 목록 렌더 -----
   function renderRoster() {
     const container = el('roster-groups');
+    // 재렌더 전 펼침 상태 캡처
+    const expandedGroups = new Set();
+    container.querySelectorAll('.accordion-collapse.show').forEach(el => {
+      const m = el.id.match(/^grp-body-(\d+)$/);
+      if (m) expandedGroups.add(parseInt(m[1], 10));
+    });
+
     container.innerHTML = '';
     // 조별 그룹핑 (group 번호 순)
     const byGroup = {};
@@ -361,6 +368,7 @@
       const members = byGroup[g];
       const size = state.groupSizes[g - 1];
       const mismatch = members.length !== size;
+      const isOpen = expandedGroups.has(g);
       const acc = document.createElement('div');
       acc.className = 'accordion-item';
       acc.style.background = 'rgba(255,255,255,0.03)';
@@ -368,13 +376,13 @@
       acc.style.marginBottom = '0.5rem';
       acc.innerHTML = `
         <h2 class="accordion-header">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+          <button class="accordion-button ${isOpen ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse"
                   data-bs-target="#grp-body-${g}" style="background: transparent; color: var(--text-primary); font-weight: 600;">
             조 ${g} (${members.length}명${mismatch ? ' / 정원 ' + size : ''})
             ${mismatch ? '<span style="color: #ef4444; margin-left: 0.5rem;">정원 불일치</span>' : ''}
           </button>
         </h2>
-        <div id="grp-body-${g}" class="accordion-collapse collapse">
+        <div id="grp-body-${g}" class="accordion-collapse collapse${isOpen ? ' show' : ''}">
           <div class="accordion-body p-2">
             <table class="table table-sm table-dark-custom mb-0">
               <thead>
@@ -483,15 +491,16 @@
 
   function moveToGroup(idx, targetGroup) {
     const flat = rebuildFlat();
-    // 해당 원소를 flat에서 빼서 targetGroup의 끝 자리에 삽입
-    const m = flat.splice(idx, 1)[0];
-    // targetGroup의 시작 인덱스 계산
-    let pos = 0;
-    for (let g = 1; g < targetGroup; g++) pos += state.groupSizes[g - 1];
-    pos += state.groupSizes[targetGroup - 1]; // 해당 조의 끝
-    // 하지만 splice 후 전체 길이가 줄었으므로 pos는 최대 flat.length
-    pos = Math.min(pos, flat.length);
-    flat.splice(pos, 0, m);
+    // targetGroup의 첫 슬롯 인덱스 (sum(groupSizes[0..targetGroup-2]))
+    let firstOfTarget = 0;
+    for (let g = 0; g < targetGroup - 1; g++) firstOfTarget += state.groupSizes[g];
+    if (idx === firstOfTarget) {
+      // 이미 target 조의 1번 주자 → no-op (드롭다운 상태 재렌더만)
+      renderRoster();
+      return;
+    }
+    // A와 target 조의 1번 주자를 교환: 두 주자의 자리를 서로 바꿈
+    [flat[idx], flat[firstOfTarget]] = [flat[firstOfTarget], flat[idx]];
     state.participants = assignToGroups(
       flat.map(p => ({knox_id: p.knox_id, name: p.name})),
       state.groupSizes
