@@ -7,6 +7,7 @@
     <h2 style="font-weight: 800;">관리자 대시보드</h2>
     <div>
         <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">5초마다 자동 갱신</span>
+        <a href="{{ url_for('admin_init') }}" class="btn btn-outline-primary btn-sm ms-2">초기화 마법사</a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-secondary btn-sm ms-2">로그아웃</a>
     </div>
 </div>

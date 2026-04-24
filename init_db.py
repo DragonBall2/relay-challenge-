@@ -119,8 +119,8 @@ def init_database(
     }
     """
     sys.path.insert(0, BASE_DIR)
-    from app import create_app
     from models import db, Group, Runner
+    from flask import current_app, has_app_context
 
     # ordered_participants가 주어지면 N도 거기서 도출
     if ordered_participants is not None:
@@ -149,12 +149,23 @@ def init_database(
             excel_path=os.path.join(BASE_DIR, "challenge_admin.xlsx"),
         )
 
-    app = create_app()
+    # Flask 앱 컨텍스트가 이미 있으면 재사용(웹 경로), 없으면 새로 생성(CLI 경로)
+    from contextlib import nullcontext
+    if has_app_context():
+        app = current_app._get_current_object()
+        ctx = nullcontext()
+    else:
+        from app import create_app
+        app = create_app()
+        ctx = app.app_context()
+
     first_player_lines: list[str] = []
     group_roster: dict[int, list] = {}
 
-    with app.app_context():
-        # 기존 DB 삭제 후 재생성
+    with ctx:
+        # 기존 DB 삭제 후 재생성 — Windows에서 파일 잠금 해제
+        db.session.remove()
+        db.engine.dispose()
         db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
         if os.path.exists(db_path):
             os.remove(db_path)

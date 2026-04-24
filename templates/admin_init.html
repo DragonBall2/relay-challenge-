@@ -1,0 +1,659 @@
+{% extends "base.html" %}
+
+{% block title %}챌린지 초기화 마법사{% endblock %}
+
+{% block head %}
+<style>
+  .wizard-steps { display: flex; gap: 0.5rem; margin-bottom: 2rem; }
+  .wizard-step {
+    flex: 1; padding: 0.75rem; border-radius: 8px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-secondary); text-align: center;
+  }
+  .wizard-step.active {
+    background: rgba(65,105,225,0.15); border-color: rgba(65,105,225,0.6);
+    color: var(--samsung-blue-light); font-weight: 700;
+  }
+  .wizard-step.done { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.4); color: var(--accent-green); }
+  .size-box {
+    background: rgba(65,105,225,0.08); border: 1px solid rgba(65,105,225,0.3);
+    border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.75rem;
+    font-family: 'D2Coding', Consolas, monospace; font-size: 0.9rem;
+  }
+  .size-box .size-title { color: var(--samsung-blue-light); font-weight: 700; margin-bottom: 0.35rem; }
+  .size-box .size-detail { color: var(--text-secondary); font-size: 0.85rem; }
+  .warn-banner {
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.35);
+    border-radius: 8px; padding: 0.6rem 0.9rem; color: #f59e0b;
+    font-size: 0.9rem; margin-top: 0.75rem;
+  }
+  textarea.csv-input {
+    font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem;
+    min-height: 300px;
+  }
+  .error-list { color: #ef4444; font-size: 0.85rem; }
+  .error-list li { margin-bottom: 0.2rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="hero" style="padding: 1.5rem 0;">
+      <h1>챌린지 초기화 마법사</h1>
+      <p>참가자 CSV를 붙여넣어 조를 편성하고 DB를 초기화합니다.</p>
+    </div>
+
+    <div class="wizard-steps">
+      <div class="wizard-step active" id="step-indicator-1">1. 규모 + CSV</div>
+      <div class="wizard-step" id="step-indicator-2">2. 순서 편집</div>
+      <div class="wizard-step" id="step-indicator-3">3. 확인 & 실행</div>
+    </div>
+
+    <!-- ============ 1단계 ============ -->
+    <section id="step-1" class="card mb-4">
+      <div class="card-header py-3"><h5 class="mb-0" style="font-weight: 700;">1단계: 규모 설정 + CSV 붙여넣기</h5></div>
+      <div class="card-body">
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" style="font-weight: 600;">전체 인원수 (N)</label>
+            <input type="number" class="form-control" id="input-n"
+                   value="{{ default_n }}" min="{{ n_min }}" max="{{ n_max }}">
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              범위: {{ n_min }} ~ {{ n_max }}
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" style="font-weight: 600;">조 수 (G)</label>
+            <input type="number" class="form-control" id="input-g"
+                   value="{{ default_g }}" min="{{ g_min }}" max="{{ g_max }}">
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              범위: {{ g_min }} ~ {{ g_max }}, G ≤ N
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" style="font-weight: 600;">현재 문제 풀</label>
+            <div class="form-control-plaintext" id="pool-info">
+              {{ problem_pool_size }}개
+            </div>
+          </div>
+        </div>
+
+        <div class="size-box" id="size-box"></div>
+        <div class="warn-banner" id="pool-warn" style="display: none;"></div>
+
+        <hr class="my-4">
+
+        <label class="form-label" style="font-weight: 600;">참가자 CSV</label>
+        <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+          기대 컬럼: <code>knox_id</code>, <code>name</code>. 구분자는 쉼표 또는 탭(엑셀 복붙). 헤더는 자동 감지됩니다.
+        </div>
+        <textarea class="form-control csv-input" id="csv-input"
+                  placeholder="knox_id,name&#10;alice.kim,김앨리스&#10;bob.lee,이밥&#10;..."></textarea>
+
+        <div id="parse-errors" class="mt-3" style="display: none;">
+          <div class="alert alert-danger">
+            <strong>파싱 오류:</strong>
+            <ul class="error-list mb-0" id="parse-errors-list"></ul>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end mt-3">
+          <button type="button" class="btn btn-samsung px-4 py-2" id="btn-parse">
+            파싱 &amp; 다음 ▶
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 2단계 ============ -->
+    <section id="step-2" class="card mb-4" style="display: none;">
+      <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0" style="font-weight: 700;">2단계: 주자 목록 편집</h5>
+        <div id="roster-summary" style="font-size: 0.9rem;"></div>
+      </div>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-shuffle-all">🎲 전체 셔플</button>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-shuffle-inner">🎲 조 내부 셔플</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-reset-roster">↻ 초기 상태 복원</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-expand-all">⤵ 모두 펼치기</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-collapse-all">⤴ 모두 접기</button>
+        </div>
+
+        <div id="roster-groups" class="accordion" style="--bs-accordion-bg: transparent;"></div>
+
+        <div class="d-flex justify-content-between mt-3">
+          <button type="button" class="btn btn-outline-secondary" id="btn-back-to-1">◀ 이전</button>
+          <button type="button" class="btn btn-samsung px-4" id="btn-goto-3">다음 ▶</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 3단계 ============ -->
+    <section id="step-3" class="card mb-4" style="display: none;">
+      <div class="card-header py-3"><h5 class="mb-0" style="font-weight: 700;">3단계: 확인 &amp; 실행</h5></div>
+      <div class="card-body">
+        <table class="table table-dark-custom mb-3" style="width: auto;">
+          <tbody id="summary-table"></tbody>
+        </table>
+
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="opt-regen">
+          <label class="form-check-label" for="opt-regen">
+            challenge_data.dat 및 xlsx 가이드 재생성
+          </label>
+          <div style="color: var(--text-secondary); font-size: 0.8rem;">
+            N이 현재 문제 풀과 다를 때 자동 체크되며 해제할 수 없습니다.
+          </div>
+        </div>
+
+        <div class="form-check mb-3" id="force-wrap" style="display: none;">
+          <input class="form-check-input" type="checkbox" id="opt-force">
+          <label class="form-check-label" for="opt-force" style="color: #f59e0b;">
+            진행 중인 주자가 있어도 강제 실행
+          </label>
+        </div>
+
+        <hr>
+
+        <div class="mb-3">
+          <label class="form-label" style="font-weight: 600;">
+            확인을 위해 <code>INIT</code> 을 정확히 입력하세요
+          </label>
+          <input type="text" class="form-control" id="confirm-input"
+                 style="max-width: 300px; font-family: 'D2Coding', Consolas, monospace;">
+        </div>
+
+        <div id="commit-result" class="mt-3"></div>
+
+        <div class="d-flex justify-content-between mt-3">
+          <button type="button" class="btn btn-outline-secondary" id="btn-back-to-2">◀ 이전</button>
+          <button type="button" class="btn btn-danger px-4" id="btn-commit" disabled>
+            🗑 초기화 실행
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 결과 화면 ============ -->
+    <section id="step-done" class="card mb-4" style="display: none;">
+      <div class="card-header py-3"><h5 class="mb-0" style="font-weight: 700; color: var(--accent-green);">초기화 완료</h5></div>
+      <div class="card-body">
+        <div id="done-summary" class="mb-3"></div>
+
+        <h6 style="font-weight: 700; margin-top: 1.5rem;">firstPlayer.txt</h6>
+        <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+          각 조 1번 주자에게 개별적으로 전달하세요.
+        </div>
+        <div class="d-flex gap-2 mb-2">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-copy-first">📋 전체 복사</button>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_init_download', kind='first-player') }}">💾 firstPlayer.txt</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_init_download', kind='roster') }}">💾 groupRoster.txt</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_init_download', kind='challenge-data') }}">💾 challenge_data.dat</a>
+        </div>
+        <pre id="done-first-player"
+             style="background: rgba(0,0,0,0.4); padding: 1rem; border-radius: 8px;
+                    font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem;
+                    max-height: 400px; overflow-y: auto;"></pre>
+
+        <div class="mt-3">
+          <a href="{{ url_for('admin_dashboard') }}" class="btn btn-samsung">관리자 대시보드로 이동 →</a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const N_MIN = {{ n_min }}, N_MAX = {{ n_max }};
+  const G_MIN = {{ g_min }}, G_MAX = {{ g_max }};
+  const POOL_SIZE = {{ problem_pool_size }};
+
+  const el = (id) => document.getElementById(id);
+
+  // 전역 상태
+  const state = {
+    N: 0, G: 0,
+    groupSizes: [],
+    participants: [],          // [{knox_id, name, group, order}]
+    initialSnapshot: null,     // 파싱 직후 참가자 원본 (초기 복원용)
+    commitResult: null,        // {first_player_lines, ...}
+  };
+
+  function computeGroupSizes(n, g) {
+    const base = Math.floor(n / g);
+    const remainder = n % g;
+    return Array.from({length: g}, (_, i) => i < remainder ? base + 1 : base);
+  }
+
+  // ----- 1단계: 규모 박스 실시간 렌더 -----
+  function renderSizeBox() {
+    const sizeBox = el('size-box'), poolWarn = el('pool-warn');
+    const n = parseInt(el('input-n').value, 10);
+    const g = parseInt(el('input-g').value, 10);
+    if (!Number.isInteger(n) || !Number.isInteger(g) || n < N_MIN || g < G_MIN) {
+      sizeBox.innerHTML = '<span style="color: var(--text-secondary);">N/G를 입력하세요.</span>';
+      return;
+    }
+    if (g > n) {
+      sizeBox.innerHTML = '<span style="color: #ef4444;">조 수가 전체 인원수보다 큽니다.</span>';
+      return;
+    }
+    const base = Math.floor(n / g), remainder = n % g;
+    sizeBox.innerHTML = remainder === 0
+      ? `<div class="size-title">조당 인원: 각 조 ${base}명 (총 ${n}명, 균등 배분)</div>`
+      : `<div class="size-title">조당 인원: ${base}~${base + 1}명</div>`
+        + `<div class="size-detail">· 조 1~${remainder}: ${base + 1}명</div>`
+        + `<div class="size-detail">· 조 ${remainder + 1}~${g}: ${base}명</div>`
+        + `<div class="size-detail">· 총 ${n}명</div>`;
+    if (n > POOL_SIZE) {
+      poolWarn.style.display = 'block';
+      poolWarn.textContent = `⚠ N=${n}이 현재 문제 풀(${POOL_SIZE}개)보다 큽니다. 3단계에서 "challenge_data.dat 재생성"이 자동으로 체크됩니다.`;
+    } else {
+      poolWarn.style.display = 'none';
+    }
+  }
+  el('input-n').addEventListener('input', renderSizeBox);
+  el('input-g').addEventListener('input', renderSizeBox);
+  renderSizeBox();
+
+  // ----- 단계 전환 -----
+  function goStep(n) {
+    for (const s of [1,2,3]) {
+      el('step-' + s).style.display = n === s ? '' : 'none';
+      const ind = el('step-indicator-' + s);
+      ind.classList.remove('active', 'done');
+      if (s < n) ind.classList.add('done');
+      else if (s === n) ind.classList.add('active');
+    }
+    el('step-done').style.display = 'none';
+  }
+  function goDone() {
+    for (const s of [1,2,3]) {
+      el('step-' + s).style.display = 'none';
+      el('step-indicator-' + s).classList.remove('active');
+      el('step-indicator-' + s).classList.add('done');
+    }
+    el('step-done').style.display = '';
+  }
+
+  // ----- 1단계 → 파싱 → 2단계 -----
+  el('btn-parse').addEventListener('click', async () => {
+    const n = parseInt(el('input-n').value, 10);
+    const g = parseInt(el('input-g').value, 10);
+    const csvText = el('csv-input').value;
+    const errorsBox = el('parse-errors'), errorsList = el('parse-errors-list');
+    errorsBox.style.display = 'none';
+    errorsList.innerHTML = '';
+
+    try {
+      const res = await fetch('{{ url_for("admin_init_parse") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+        body: JSON.stringify({csv_text: csvText, total_n: n, group_count: g}),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        errorsBox.style.display = 'block';
+        for (const e of (data.errors || [])) {
+          const li = document.createElement('li');
+          li.textContent = e.row > 0 ? `행 ${e.row}: ${e.message}` : e.message;
+          errorsList.appendChild(li);
+        }
+        return;
+      }
+
+      // 경고가 있으면 사용자 확인
+      if (data.warnings && data.warnings.length) {
+        if (!confirm(data.warnings.join('\n\n') + '\n\n계속 진행할까요?')) return;
+      }
+
+      state.N = data.participants.length;
+      state.G = data.group_sizes.length;
+      state.groupSizes = data.group_sizes.slice();
+      // 조 배정: 파싱된 순서 그대로, 정원만큼 잘라서
+      state.participants = assignToGroups(data.participants, state.groupSizes);
+      state.initialSnapshot = state.participants.map(p => ({...p}));
+      renderRoster();
+      goStep(2);
+    } catch (err) {
+      errorsBox.style.display = 'block';
+      const li = document.createElement('li');
+      li.textContent = '요청 실패: ' + (err && err.message ? err.message : String(err));
+      errorsList.appendChild(li);
+    }
+  });
+
+  function assignToGroups(flat, groupSizes) {
+    const result = [];
+    let idx = 0;
+    for (let g = 0; g < groupSizes.length; g++) {
+      for (let o = 1; o <= groupSizes[g]; o++) {
+        const m = flat[idx++];
+        result.push({knox_id: m.knox_id, name: m.name, group: g + 1, order: o});
+      }
+    }
+    return result;
+  }
+
+  // ----- 2단계: 주자 목록 렌더 -----
+  function renderRoster() {
+    const container = el('roster-groups');
+    container.innerHTML = '';
+    // 조별 그룹핑 (group 번호 순)
+    const byGroup = {};
+    for (let g = 1; g <= state.G; g++) byGroup[g] = [];
+    state.participants.forEach(p => byGroup[p.group].push(p));
+    // run_order 정렬 + 재번호
+    for (let g = 1; g <= state.G; g++) {
+      byGroup[g].sort((a, b) => a.order - b.order);
+      byGroup[g].forEach((p, i) => p.order = i + 1);
+    }
+
+    // 아코디언 렌더
+    for (let g = 1; g <= state.G; g++) {
+      const members = byGroup[g];
+      const size = state.groupSizes[g - 1];
+      const mismatch = members.length !== size;
+      const acc = document.createElement('div');
+      acc.className = 'accordion-item';
+      acc.style.background = 'rgba(255,255,255,0.03)';
+      acc.style.border = '1px solid rgba(255,255,255,0.1)';
+      acc.style.marginBottom = '0.5rem';
+      acc.innerHTML = `
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#grp-body-${g}" style="background: transparent; color: var(--text-primary); font-weight: 600;">
+            조 ${g} (${members.length}명${mismatch ? ' / 정원 ' + size : ''})
+            ${mismatch ? '<span style="color: #ef4444; margin-left: 0.5rem;">정원 불일치</span>' : ''}
+          </button>
+        </h2>
+        <div id="grp-body-${g}" class="accordion-collapse collapse">
+          <div class="accordion-body p-2">
+            <table class="table table-sm table-dark-custom mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 60px;">순서</th>
+                  <th>Knox-ID</th>
+                  <th>이름</th>
+                  <th style="width: 200px;">조작</th>
+                </tr>
+              </thead>
+              <tbody data-group="${g}">
+                ${members.map(p => renderMemberRow(p, state.G)).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      container.appendChild(acc);
+    }
+
+    renderRosterSummary();
+    wireMemberActions();
+  }
+
+  function renderMemberRow(p, G) {
+    const isFirst = p.order === 1;
+    const options = Array.from({length: G}, (_, i) => i + 1)
+      .map(n => `<option value="${n}" ${n === p.group ? 'selected' : ''}>조 ${n}</option>`).join('');
+    return `
+      <tr data-knox="${p.knox_id}" ${isFirst ? 'style="background: rgba(245,158,11,0.08);"' : ''}>
+        <td style="font-weight: 600;">${isFirst ? '⭐ ' : ''}${p.order}</td>
+        <td style="font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem;">${escapeHtml(p.knox_id)}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-secondary js-up" title="위로">▲</button>
+          <button class="btn btn-sm btn-outline-secondary js-down" title="아래로">▼</button>
+          <select class="form-select form-select-sm d-inline-block js-move-group" style="width: 90px;">
+            ${options}
+          </select>
+        </td>
+      </tr>
+    `;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderRosterSummary() {
+    const total = state.participants.length;
+    const expected = state.N;
+    const ok = total === expected;
+    el('roster-summary').innerHTML = ok
+      ? `<span style="color: var(--accent-green);">✔ 조 ${state.G}개, 총 ${total}명 (정합)</span>`
+      : `<span style="color: #ef4444;">✘ 총 ${total}명 / 기대 ${expected}명</span>`;
+  }
+
+  function wireMemberActions() {
+    // 평면 배열에서 위/아래 swap (조 경계는 정원 제약 없이 넘음: 새 조에 편입)
+    el('roster-groups').querySelectorAll('.js-up').forEach(btn => {
+      btn.onclick = (e) => moveMember(findIndexOf(e.target), -1);
+    });
+    el('roster-groups').querySelectorAll('.js-down').forEach(btn => {
+      btn.onclick = (e) => moveMember(findIndexOf(e.target), 1);
+    });
+    el('roster-groups').querySelectorAll('.js-move-group').forEach(sel => {
+      sel.onchange = (e) => {
+        const idx = findIndexOf(e.target);
+        const target = parseInt(e.target.value, 10);
+        moveToGroup(idx, target);
+      };
+    });
+  }
+
+  function findIndexOf(node) {
+    const tr = node.closest('tr');
+    const knox = tr.getAttribute('data-knox');
+    return state.participants.findIndex(p => p.knox_id === knox);
+  }
+
+  function rebuildFlat() {
+    // 조별·순서대로 평면 배열 재구성
+    const byGroup = {};
+    for (let g = 1; g <= state.G; g++) byGroup[g] = [];
+    state.participants.forEach(p => byGroup[p.group].push(p));
+    const flat = [];
+    for (let g = 1; g <= state.G; g++) {
+      byGroup[g].sort((a, b) => a.order - b.order);
+      byGroup[g].forEach((p, i) => { p.order = i + 1; flat.push(p); });
+    }
+    return flat;
+  }
+
+  function moveMember(idx, delta) {
+    const flat = rebuildFlat();
+    const target = idx + delta;
+    if (target < 0 || target >= flat.length) return;
+    [flat[idx], flat[target]] = [flat[target], flat[idx]];
+    // 정원에 맞춰 조·순서 재할당
+    state.participants = assignToGroups(
+      flat.map(p => ({knox_id: p.knox_id, name: p.name})),
+      state.groupSizes
+    );
+    renderRoster();
+  }
+
+  function moveToGroup(idx, targetGroup) {
+    const flat = rebuildFlat();
+    // 해당 원소를 flat에서 빼서 targetGroup의 끝 자리에 삽입
+    const m = flat.splice(idx, 1)[0];
+    // targetGroup의 시작 인덱스 계산
+    let pos = 0;
+    for (let g = 1; g < targetGroup; g++) pos += state.groupSizes[g - 1];
+    pos += state.groupSizes[targetGroup - 1]; // 해당 조의 끝
+    // 하지만 splice 후 전체 길이가 줄었으므로 pos는 최대 flat.length
+    pos = Math.min(pos, flat.length);
+    flat.splice(pos, 0, m);
+    state.participants = assignToGroups(
+      flat.map(p => ({knox_id: p.knox_id, name: p.name})),
+      state.groupSizes
+    );
+    renderRoster();
+  }
+
+  // 셔플
+  function fisherYates(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  el('btn-shuffle-all').onclick = () => {
+    const flat = rebuildFlat().map(p => ({knox_id: p.knox_id, name: p.name}));
+    fisherYates(flat);
+    state.participants = assignToGroups(flat, state.groupSizes);
+    renderRoster();
+  };
+
+  el('btn-shuffle-inner').onclick = () => {
+    const byGroup = {};
+    for (let g = 1; g <= state.G; g++) byGroup[g] = [];
+    state.participants.forEach(p => byGroup[p.group].push(p));
+    const flat = [];
+    for (let g = 1; g <= state.G; g++) {
+      const arr = byGroup[g].map(p => ({knox_id: p.knox_id, name: p.name}));
+      fisherYates(arr);
+      flat.push(...arr);
+    }
+    state.participants = assignToGroups(flat, state.groupSizes);
+    renderRoster();
+  };
+
+  el('btn-reset-roster').onclick = () => {
+    if (!confirm('파싱 직후 상태로 되돌릴까요? 모든 편집이 사라집니다.')) return;
+    state.participants = state.initialSnapshot.map(p => ({...p}));
+    renderRoster();
+  };
+
+  el('btn-expand-all').onclick = () => {
+    document.querySelectorAll('#roster-groups .accordion-collapse').forEach(c => c.classList.add('show'));
+    document.querySelectorAll('#roster-groups .accordion-button').forEach(b => b.classList.remove('collapsed'));
+  };
+  el('btn-collapse-all').onclick = () => {
+    document.querySelectorAll('#roster-groups .accordion-collapse').forEach(c => c.classList.remove('show'));
+    document.querySelectorAll('#roster-groups .accordion-button').forEach(b => b.classList.add('collapsed'));
+  };
+
+  el('btn-back-to-1').onclick = () => goStep(1);
+  el('btn-goto-3').onclick = () => {
+    renderSummary();
+    goStep(3);
+  };
+  el('btn-back-to-2').onclick = () => goStep(2);
+
+  // ----- 3단계: 요약 + 실행 -----
+  function renderSummary() {
+    const need = state.N;
+    const rows = [
+      ['조 수', state.G],
+      ['전체 인원', `${state.N}명`],
+      ['조당 인원', summarizeGroupSizes(state.groupSizes)],
+      ['필요 문제 수', `${need}개`],
+      ['현재 문제 풀', `${POOL_SIZE}개`],
+    ];
+    el('summary-table').innerHTML = rows.map(([k, v]) =>
+      `<tr><th style="width: 180px;">${k}</th><td>${v}</td></tr>`
+    ).join('');
+
+    // regen 자동 체크
+    const optRegen = el('opt-regen');
+    if (need !== POOL_SIZE) {
+      optRegen.checked = true;
+      optRegen.disabled = true;
+    } else {
+      optRegen.checked = false;
+      optRegen.disabled = false;
+    }
+
+    // 진행 중 체크 (서버에서 force 필요시 재시도 - 여기서는 단순히 버튼 노출은 force 필요 시에만)
+    // 일단 숨김, commit 에러 시 노출
+    el('force-wrap').style.display = 'none';
+    el('opt-force').checked = false;
+
+    el('commit-result').innerHTML = '';
+    el('confirm-input').value = '';
+    el('btn-commit').disabled = true;
+  }
+
+  function summarizeGroupSizes(sizes) {
+    const n = sizes.reduce((a, b) => a + b, 0);
+    const g = sizes.length;
+    const base = Math.floor(n / g), remainder = n % g;
+    if (remainder === 0) return `각 조 ${base}명 (균등)`;
+    return `${base}~${base + 1}명 / 조 1~${remainder}: ${base + 1}명, 조 ${remainder + 1}~${g}: ${base}명`;
+  }
+
+  el('confirm-input').addEventListener('input', () => {
+    el('btn-commit').disabled = el('confirm-input').value !== 'INIT';
+  });
+
+  el('btn-commit').onclick = async () => {
+    const btn = el('btn-commit');
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = '실행 중...';
+    el('commit-result').innerHTML = '';
+
+    const body = {
+      group_count: state.G,
+      group_sizes: state.groupSizes,
+      ordered_participants: state.participants,
+      regen_challenge_data: el('opt-regen').checked,
+      force: el('opt-force').checked,
+      confirm: el('confirm-input').value,
+    };
+
+    try {
+      const res = await fetch('{{ url_for("admin_init_commit") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        btn.disabled = false;
+        btn.textContent = origText;
+        if (data.error_code === 'IN_PROGRESS') {
+          el('force-wrap').style.display = 'block';
+          el('commit-result').innerHTML = `<div class="alert alert-warning">${escapeHtml(data.message || '진행 중 주자 있음')}<br>강제 실행 체크 후 재시도.</div>`;
+        } else {
+          el('commit-result').innerHTML = `<div class="alert alert-danger">[${escapeHtml(data.error_code || '')}] ${escapeHtml(data.message || '실행 실패')}</div>`;
+        }
+        return;
+      }
+      state.commitResult = data;
+      renderDone(data);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = origText;
+      el('commit-result').innerHTML = `<div class="alert alert-danger">요청 실패: ${escapeHtml(err.message || String(err))}</div>`;
+    }
+  };
+
+  function renderDone(data) {
+    el('done-summary').innerHTML =
+      `✅ 조 ${data.summary.groups}개 / 주자 ${data.summary.runners}명 / 문제 ${data.summary.problems}개 세팅 완료`;
+    el('done-first-player').textContent = (data.first_player_lines || []).join('\n');
+    goDone();
+  }
+
+  el('btn-copy-first').onclick = () => {
+    const text = el('done-first-player').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      el('btn-copy-first').textContent = '✔ 복사됨';
+      setTimeout(() => { el('btn-copy-first').textContent = '📋 전체 복사'; }, 1500);
+    });
+  };
+})();
+</script>
+{% endblock %}
