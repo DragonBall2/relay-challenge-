@@ -948,6 +948,7 @@ def admin_init_download(kind):
         'first-player':   ('firstPlayer.txt',     'text/plain'),
         'roster':         ('groupRoster.txt',     'text/plain'),
         'challenge-data': ('challenge_data.dat',  'application/octet-stream'),
+        'relay-db':       ('relay.db',            'application/x-sqlite3'),
     }
     if kind not in mapping:
         abort(404)
@@ -955,6 +956,38 @@ def admin_init_download(kind):
     path = os.path.join(os.path.dirname(__file__), filename)
     if not os.path.exists(path):
         abort(404, description=f'{filename} 없음 (초기화 먼저 실행)')
+
+    # SQLite DB는 사용 중일 수 있으므로 backup API로 일관된 스냅샷을 만들어 전송
+    if kind == 'relay-db':
+        import sqlite3
+        import tempfile
+        from flask import after_this_request
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.db')
+        os.close(tmp_fd)
+        try:
+            src = sqlite3.connect(path)
+            dst = sqlite3.connect(tmp_path)
+            with dst:
+                src.backup(dst)
+            dst.close()
+            src.close()
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+
+        @after_this_request
+        def _cleanup(response):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return response
+
+        return send_file(tmp_path, as_attachment=True, download_name=filename, mimetype=mime)
+
     return send_file(path, as_attachment=True, download_name=filename, mimetype=mime)
 
 

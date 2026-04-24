@@ -10,6 +10,7 @@
         <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="btn-view-first-player">firstPlayer.txt</button>
         <button type="button" class="btn btn-outline-secondary btn-sm ms-1" id="btn-view-roster">groupRoster.txt</button>
         <a href="{{ url_for('admin_init_download', kind='challenge-data') }}" class="btn btn-outline-secondary btn-sm ms-1">challenge_data.dat</a>
+        <a href="{{ url_for('admin_init_download', kind='relay-db') }}" class="btn btn-outline-secondary btn-sm ms-1" title="SQLite DB 스냅샷">relay.db</a>
         <a href="{{ url_for('admin_init') }}" class="btn btn-outline-primary btn-sm ms-2">초기화 마법사</a>
         <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-secondary btn-sm ms-2">로그아웃</a>
     </div>
