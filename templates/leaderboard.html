@@ -106,6 +106,7 @@
     </div>
 </div>
 
+{% if show_individual %}
 <!-- 개인 랭킹 TOP N (동적) -->
 <h4 class="mt-5 mb-3" style="font-weight: 800;">개인 랭킹 TOP {{ individuals|length }}</h4>
 <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: -0.5rem;">
@@ -155,6 +156,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

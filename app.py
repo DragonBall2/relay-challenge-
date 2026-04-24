@@ -3,6 +3,7 @@
 코딩 에이전트 릴레이 설치 챌린지 - Flask 웹 애플리케이션
 """
 
+import json
 import os
 import secrets
 import string
@@ -13,6 +14,28 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, send_file, jsonify, abort, make_response)
 from models import db, Group, Runner, AttemptLog
 import config
+
+
+# ============================================================
+# 설정 파일 (초기화 마법사에서 쓰이는 운영 옵션)
+# ============================================================
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
+DEFAULT_SETTINGS = {'show_individual_ranking': True}
+
+
+def _read_settings() -> dict:
+    try:
+        with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return {**DEFAULT_SETTINGS, **data}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return dict(DEFAULT_SETTINGS)
+
+
+def _write_settings(data: dict) -> None:
+    merged = {**DEFAULT_SETTINGS, **data}
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        json.dump(merged, f, ensure_ascii=False, indent=2)
 
 
 def create_app():
@@ -389,10 +412,13 @@ def get_individual_rankings(limit=20):
 @app.route('/leaderboard')
 def leaderboard():
     rankings = get_group_rankings()
-    individuals = get_individual_rankings(limit=10)
+    settings = _read_settings()
+    show_individual = settings.get('show_individual_ranking', True)
+    individuals = get_individual_rankings(limit=10) if show_individual else []
     return render_template('leaderboard.html',
                            rankings=rankings,
-                           individuals=individuals)
+                           individuals=individuals,
+                           show_individual=show_individual)
 
 
 @app.route('/guide')
@@ -911,6 +937,9 @@ def admin_init_commit():
             'order':   int(p.get('order', 0)),
         })
 
+    # 운영 옵션 (리더보드 개인 랭킹 공개 여부 등)
+    show_individual = bool(data.get('show_individual_ranking', True))
+
     # 6) init_database 실행 — 세션/엔진을 먼저 닫아야 Windows에서 DB 파일 삭제 가능
     db.session.remove()
     db.engine.dispose()
@@ -929,6 +958,12 @@ def admin_init_commit():
             'error_code': 'INTERNAL',
             'message': f'초기화 실패: {type(e).__name__}: {e}',
         }), 500
+
+    # 7) 운영 옵션 저장 (DB 초기화와 독립)
+    try:
+        _write_settings({'show_individual_ranking': show_individual})
+    except OSError:
+        pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
 
     return jsonify({
         'ok': True,

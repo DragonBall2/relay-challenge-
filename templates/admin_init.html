@@ -149,6 +149,17 @@
           </div>
         </div>
 
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="opt-show-individual" checked>
+          <label class="form-check-label" for="opt-show-individual">
+            개인 랭킹을 리더보드에 공개
+          </label>
+          <div style="color: var(--text-secondary); font-size: 0.8rem;">
+            체크 시 리더보드 하단에 "개인 랭킹 TOP 10"(경과시간 오름차순)이 표시됩니다.
+            개인 시상을 하지 않는 운영에서는 해제하세요.
+          </div>
+        </div>
+
         <div class="form-check mb-3" id="force-wrap" style="display: none;">
           <input class="form-check-input" type="checkbox" id="opt-force">
           <label class="form-check-label" for="opt-force" style="color: #f59e0b;">
@@ -619,6 +630,7 @@
       ordered_participants: state.participants,
       regen_challenge_data: el('opt-regen').checked,
       force: el('opt-force').checked,
+      show_individual_ranking: el('opt-show-individual').checked,
       confirm: el('confirm-input').value,
     };
 
