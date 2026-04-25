@@ -56,23 +56,34 @@
       <div class="card-body">
 
         <div class="row g-3">
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label" style="font-weight: 600;">전체 인원수 (N)</label>
             <input type="number" class="form-control" id="input-n"
                    value="{{ default_n }}" min="{{ n_min }}" max="{{ n_max }}">
             <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
-              범위: {{ n_min }} ~ {{ n_max }}
+              {{ n_min }} ~ {{ n_max }}
             </div>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <label class="form-label" style="font-weight: 600;">조 수 (G)</label>
             <input type="number" class="form-control" id="input-g"
                    value="{{ default_g }}" min="{{ g_min }}" max="{{ g_max }}">
             <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
-              범위: {{ g_min }} ~ {{ g_max }}, G ≤ N
+              {{ g_min }} ~ {{ g_max }}, G ≤ N
             </div>
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
+            <label class="form-label" style="font-weight: 600;">난이도</label>
+            <select class="form-select" id="input-difficulty">
+              <option value="easy">Easy (1차 수준, 1-hop 위주)</option>
+              <option value="medium" selected>Medium (2차 수준, 2-hop 균일)</option>
+              <option value="hard" disabled>Hard (3-hop, 차후 지원)</option>
+            </select>
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              Easy: 입문/타 부서 · Medium: 표준
+            </div>
+          </div>
+          <div class="col-md-3">
             <label class="form-label" style="font-weight: 600;">현재 문제 풀</label>
             <div class="form-control-plaintext" id="pool-info">
               {{ problem_pool_size }}개
@@ -637,6 +648,7 @@
       regen_challenge_data: el('opt-regen').checked,
       force: el('opt-force').checked,
       show_individual_ranking: el('opt-show-individual').checked,
+      difficulty: el('input-difficulty').value,
       confirm: el('confirm-input').value,
     };
 

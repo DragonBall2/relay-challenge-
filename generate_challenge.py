@@ -541,7 +541,7 @@ def generate_type_b_problems(json_records, log_entries, n=PROBLEMS_PER_TYPE):
     combos = []
     for dept in DEPARTMENTS:
         for status in STATUSES:
-            for level in ["ERROR", "WARN", "CRITICAL"]:
+            for level in LOG_LEVELS:  # 5 levels — Easy 모드 N=500까지 풀 확보
                 combos.append((dept, status, level))
     random.shuffle(combos)
 
@@ -661,7 +661,6 @@ def generate_type_c_problems(csv_rows, n=PROBLEMS_PER_TYPE):
 def generate_type_d_problems(code_data, n=PROBLEMS_PER_TYPE):
     """Type D: 코드 블록 분석"""
     problems = []
-    used_answers = set()
 
     combos = []
     for lang in LANGUAGES:
@@ -694,10 +693,6 @@ def generate_type_d_problems(code_data, n=PROBLEMS_PER_TYPE):
         result = keyword_line_count * len(unique_funcs)
         answer = f"{result}"
 
-        if answer in used_answers:
-            continue
-        used_answers.add(answer)
-
         text = (f"challenge_data.dat 파일에서 코드 블록을 분석하세요:\n"
                 f"- 대상: 언어 태그가 [{lang}]인 모든 CODE_BLOCK\n"
                 f"- 분석 1: 해당 블록들의 코드 라인 중 \"{keyword}\"를 포함하는 라인의 수 (A)\n"
@@ -722,19 +717,22 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
     problems = []
     used_answers = set()
 
+    # combo: (tag, min_metric, sort_field, return_attr) — min_metric으로 조합 확장
     combos = []
     for tag in TAGS:
-        for sort_field in ["metric", "priority"]:
-            for return_attr in ["ref", "metric", "entry_id"]:
-                combos.append((tag, sort_field, return_attr))
+        for min_metric in [0, 100, 250, 500]:
+            for sort_field in ["metric", "priority"]:
+                for return_attr in ["ref", "metric", "entry_id"]:
+                    combos.append((tag, min_metric, sort_field, return_attr))
     random.shuffle(combos)
 
     for combo in combos:
         if len(problems) >= n:
             break
-        tag, sort_field, return_attr = combo
+        tag, min_metric, sort_field, return_attr = combo
 
-        filtered = [e for e in registry_entries if e["tag"] == tag]
+        filtered = [e for e in registry_entries
+                    if e["tag"] == tag and e["metric"] >= min_metric]
         if len(filtered) < 5:
             continue
 
@@ -743,11 +741,10 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
         else:
             filtered.sort(key=lambda x: x["priority"])
 
-        # nth item (5~len 사이에서 랜덤)
         max_n = min(len(filtered), 30)
         nth = random.randint(5, max_n)
 
-        item = filtered[nth - 1]  # 1-indexed
+        item = filtered[nth - 1]
         answer = str(item[return_attr])
 
         if answer in used_answers:
@@ -756,9 +753,10 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
 
         sort_kr = "metric (오름차순, 숫자)" if sort_field == "metric" else "priority (오름차순, 알파벳)"
         attr_kr = {"ref": "ref(직원 ID)", "metric": "metric 값", "entry_id": "entry_id"}[return_attr]
+        metric_filter_kr = "" if min_metric == 0 else f"이고 metric >= {min_metric}"
 
         text = (f"challenge_data.dat 파일에서 레지스트리 항목을 분석하세요:\n"
-                f"- 대상: 모든 REGISTRY 섹션에서 tag={tag}인 항목을 수집\n"
+                f"- 대상: 모든 REGISTRY 섹션에서 tag={tag}{metric_filter_kr} 인 항목을 수집\n"
                 f"- 정렬: {sort_kr}\n"
                 f"- 결과: 정렬 후 {nth}번째 항목의 {attr_kr}를 제출하세요\n"
                 f"(총 {len(filtered)}개 항목이 매칭되어야 합니다)\n"
@@ -769,8 +767,8 @@ def generate_type_e_problems(registry_entries, n=PROBLEMS_PER_TYPE):
             ptype="E",
             text=text,
             answer=answer,
-            params={"tag": tag, "sort_field": sort_field, "nth": nth,
-                    "return_attr": return_attr, "total": len(filtered)}
+            params={"tag": tag, "min_metric": min_metric, "sort_field": sort_field,
+                    "nth": nth, "return_attr": return_attr, "total": len(filtered)}
         ))
 
     return problems
@@ -995,11 +993,21 @@ def _scaled_data_sizes(total_problems: int) -> dict:
     }
 
 
-def _build_pools(total_problems: int):
-    """유형별 풀을 생성해 (pools, data_bundle) 반환. 내부에서 seed 재설정."""
+DIFFICULTY_LEVELS = ('easy', 'medium')  # 'hard'는 이번 범위 밖
+
+
+def _build_pools(total_problems: int, difficulty: str = 'medium'):
+    """유형별 풀을 생성해 (pools, data_bundle) 반환. 내부에서 seed 재설정.
+
+    difficulty:
+      - 'easy'  : Type A/C/D/E (1-hop, 4유형)
+      - 'medium': Type F/G/H/I/J (2-hop, 5유형) — 현재 2차 기본
+    """
+    if difficulty not in DIFFICULTY_LEVELS:
+        raise ValueError(f"unknown difficulty: {difficulty!r} (allowed: {DIFFICULTY_LEVELS})")
+
     random.seed(SEED)
     sizes = _scaled_data_sizes(total_problems)
-    per_type = math.ceil(total_problems / NUM_PROBLEM_TYPES)
 
     employees = generate_employees(sizes["n_employees"])
     log_sections, log_entries = generate_log_sections(
@@ -1018,13 +1026,24 @@ def _build_pools(total_problems: int):
     prose_sections = generate_prose_blocks()
     meta_sections = generate_metadata_dumps()
 
-    pools = [
-        generate_type_f_problems(json_records, log_entries, n=per_type),
-        generate_type_g_problems(json_records, registry_entries, n=per_type),
-        generate_type_h_problems(registry_entries, json_records, n=per_type),
-        generate_type_i_problems(log_entries, json_records, n=per_type),
-        generate_type_j_problems(log_entries, registry_entries, n=per_type),
-    ]
+    per_type = math.ceil(total_problems / NUM_PROBLEM_TYPES)
+    if difficulty == 'easy':
+        # 1차와 동일 구성: A/B/C/D/E (B만 2-hop, 나머지는 1-hop)
+        pools = [
+            generate_type_a_problems(log_entries, n=per_type),
+            generate_type_b_problems(json_records, log_entries, n=per_type),
+            generate_type_c_problems(csv_rows, n=per_type),
+            generate_type_d_problems(code_data, n=per_type),
+            generate_type_e_problems(registry_entries, n=per_type),
+        ]
+    else:  # medium — 2차 균일 2-hop
+        pools = [
+            generate_type_f_problems(json_records, log_entries, n=per_type),
+            generate_type_g_problems(json_records, registry_entries, n=per_type),
+            generate_type_h_problems(registry_entries, json_records, n=per_type),
+            generate_type_i_problems(log_entries, json_records, n=per_type),
+            generate_type_j_problems(log_entries, registry_entries, n=per_type),
+        ]
 
     bundle = {
         "all_sections": (log_sections + json_sections + csv_sections +
@@ -1047,11 +1066,12 @@ def _build_pools(total_problems: int):
 
 
 def _assign_problems_from_pools(pools, total_problems):
-    """5개 풀을 순환하며 total_problems개를 배정. 부족하면 다른 풀에서 보충."""
-    pool_indices = [0] * NUM_PROBLEM_TYPES
+    """가변 개수 풀을 순환하며 total_problems개 배정. 부족하면 다른 풀에서 보충."""
+    n_pools = len(pools)
+    pool_indices = [0] * n_pools
     assigned = []
     for i in range(total_problems):
-        type_idx = i % NUM_PROBLEM_TYPES
+        type_idx = i % n_pools
         pool = pools[type_idx]
         if pool_indices[type_idx] < len(pool):
             p = pool[pool_indices[type_idx]]
@@ -1059,7 +1079,7 @@ def _assign_problems_from_pools(pools, total_problems):
             assigned.append(p)
             pool_indices[type_idx] += 1
         else:
-            for alt in range(NUM_PROBLEM_TYPES):
+            for alt in range(n_pools):
                 if pool_indices[alt] < len(pools[alt]):
                     p = pools[alt][pool_indices[alt]]
                     p.pid = i + 1
@@ -1286,81 +1306,52 @@ def create_excel(all_problems, filename="challenge_admin.xlsx"):
 # 메인
 # ============================================================
 def main(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
+         difficulty: str = 'medium',
          output_path: str = "challenge_data.dat",
          excel_path: str = "challenge_admin.xlsx"):
+    if difficulty not in DIFFICULTY_LEVELS:
+        raise ValueError(f"unknown difficulty: {difficulty!r}")
+
     print("=" * 60)
-    print(f"코딩 에이전트 릴레이 설치 챌린지 - 문제 생성기 (N={total_problems})")
+    print(f"코딩 에이전트 릴레이 설치 챌린지 (N={total_problems}, difficulty={difficulty})")
     print("=" * 60)
 
-    sizes = _scaled_data_sizes(total_problems)
-    per_type = math.ceil(total_problems / NUM_PROBLEM_TYPES)
-
-    # 1. 데이터 생성
-    random.seed(SEED)
-    print(f"\n[1/6] 직원 풀 생성 (n={sizes['n_employees']})...")
-    employees = generate_employees(sizes["n_employees"])
-
-    print("[2/6] 섹션 생성...")
-    log_sections, log_entries = generate_log_sections(
-        employees,
-        n_sections=sizes["n_log_sections"],
-        lines_per_section=sizes["log_lines_per_section"],
-    )
-    json_sections, json_records = generate_json_blocks(employees)
-    csv_sections, csv_rows = generate_csv_tables()
-    code_sections, code_data = generate_code_blocks()
-    registry_sections, registry_entries = generate_registry_sections(
-        n_sections=sizes["n_registry_sections"],
-        entries_per_section=sizes["registry_entries_per_section"],
-        emp_count=len(employees),
-    )
-    prose_sections = generate_prose_blocks()
-    meta_sections = generate_metadata_dumps()
-
-    all_sections = (log_sections + json_sections + csv_sections +
-                    code_sections + registry_sections + prose_sections + meta_sections)
+    # 1~3. 섹션 데이터 생성 + challenge_data.dat 작성 + 풀 빌드
+    pools, bundle = _build_pools(total_problems, difficulty=difficulty)
+    all_sections = bundle["all_sections"]
 
     print(f"  총 {len(all_sections)}개 섹션 생성")
-    print(f"  - 로그: {len(log_sections)} ({len(log_entries)} entries)")
-    print(f"  - JSON: {len(json_sections)} ({len(json_records)} records)")
-    print(f"  - CSV: {len(csv_sections)} ({len(csv_rows)} rows)")
-    print(f"  - 코드: {len(code_sections)} ({len(code_data)} blocks)")
-    print(f"  - 레지스트리: {len(registry_sections)} ({len(registry_entries)} entries)")
-    print(f"  - 산문: {len(prose_sections)} blocks")
-    print(f"  - 메타데이터: {len(meta_sections)} dumps")
+    print(f"  - 로그: {len(bundle['log_sections'])} ({len(bundle['log_entries'])} entries)")
+    print(f"  - JSON: {len(bundle['json_sections'])} ({len(bundle['json_records'])} records)")
+    print(f"  - CSV: {len(bundle['csv_sections'])} ({len(bundle['csv_rows'])} rows)")
+    print(f"  - 코드: {len(bundle['code_sections'])} ({len(bundle['code_data'])} blocks)")
+    print(f"  - 레지스트리: {len(bundle['registry_sections'])} ({len(bundle['registry_entries'])} entries)")
+    print(f"  - 산문: {len(bundle['prose_sections'])} blocks")
+    print(f"  - 메타데이터: {len(bundle['meta_sections'])} dumps")
 
-    # 2. 파일 조립
-    print(f"\n[3/6] {output_path} 생성...")
+    # 파일 조립
+    print(f"\n  → {output_path} 작성")
     file_content = assemble_challenge_file(all_sections)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(file_content)
     line_count = file_content.count("\n") + 1
     file_size = len(file_content.encode("utf-8"))
-    print(f"  -> {line_count:,} 줄, {file_size:,} bytes ({file_size / 1024:.1f} KB)")
+    print(f"     {line_count:,} 줄, {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
-    # 3. 문제 생성 (모든 유형 2-hop, 유형별 per_type개씩 요청)
-    print(f"\n[4/6] {total_problems}개 2-hop 문제 생성 (유형별 {per_type}개 시도)...")
-    problems_f = generate_type_f_problems(json_records, log_entries, n=per_type)
-    problems_g = generate_type_g_problems(json_records, registry_entries, n=per_type)
-    problems_h = generate_type_h_problems(registry_entries, json_records, n=per_type)
-    problems_i = generate_type_i_problems(log_entries, json_records, n=per_type)
-    problems_j = generate_type_j_problems(log_entries, registry_entries, n=per_type)
+    # 풀 yield 출력
+    pool_names = (['A','B','C','D','E'] if difficulty == 'easy'
+                  else ['F','G','H','I','J'])
+    print(f"\n  유형별 생성 ({difficulty}):")
+    for name, pool in zip(pool_names, pools):
+        print(f"    Type {name}: {len(pool)}개")
 
-    print(f"  Type F (JSON→LOG 합계): {len(problems_f)}개")
-    print(f"  Type G (JSON→REG 합계): {len(problems_g)}개")
-    print(f"  Type H (REG→JSON 합계): {len(problems_h)}개")
-    print(f"  Type I (LOG→JSON 카운트): {len(problems_i)}개")
-    print(f"  Type J (LOG→REG 카운트): {len(problems_j)}개")
-
-    all_pools = [problems_f, problems_g, problems_h, problems_i, problems_j]
-    total_generated = sum(len(p) for p in all_pools)
+    total_generated = sum(len(p) for p in pools)
     if total_generated < total_problems:
         raise RuntimeError(
-            f"문제 생성 부족: 요청 {total_problems}개, 생성 {total_generated}개. "
-            "섹션 풀 크기를 키우거나 난이도 제약(STEP1/STEP2 MIN/MAX)을 완화하세요."
+            f"문제 생성 부족: 요청 {total_problems}개, 생성 {total_generated}개."
         )
 
-    all_problems = _assign_problems_from_pools(all_pools, total_problems)
+    all_problems = _assign_problems_from_pools(pools, total_problems)
 
     # 답 중복 검사
     answers = [p.answer for p in all_problems]
@@ -1384,9 +1375,10 @@ def main(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
     print("=" * 60)
 
 
-def get_all_problems(total_problems: int = DEFAULT_TOTAL_PROBLEMS):
+def get_all_problems(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
+                     difficulty: str = 'medium'):
     """외부에서 호출하여 total_problems개 문제 목록을 반환."""
-    pools, _bundle = _build_pools(total_problems)
+    pools, _bundle = _build_pools(total_problems, difficulty=difficulty)
     total_generated = sum(len(p) for p in pools)
     if total_generated < total_problems:
         raise RuntimeError(
@@ -1398,10 +1390,13 @@ def get_all_problems(total_problems: int = DEFAULT_TOTAL_PROBLEMS):
 if __name__ == "__main__":
     import sys
     n = DEFAULT_TOTAL_PROBLEMS
+    diff = 'medium'
     if len(sys.argv) > 1:
         try:
             n = int(sys.argv[1])
         except ValueError:
-            print(f"사용법: python generate_challenge.py [total_problems]")
+            print(f"사용법: python generate_challenge.py [total_problems] [easy|medium]")
             sys.exit(1)
-    main(total_problems=n)
+    if len(sys.argv) > 2:
+        diff = sys.argv[2]
+    main(total_problems=n, difficulty=diff)

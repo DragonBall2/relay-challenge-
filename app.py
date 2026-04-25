@@ -23,6 +23,7 @@ SETTINGS_PATH = os.path.join(os.path.dirname(__file__), 'settings.json')
 DEFAULT_SETTINGS = {
     'show_individual_ranking': True,
     'challenge_opened': False,   # 참가자에게 공개 여부. 관리자가 명시적으로 열어야 함.
+    'difficulty': 'medium',      # easy | medium (hard는 차후)
 }
 
 
@@ -521,6 +522,7 @@ def admin_dashboard():
     total_runners = sum(r['total'] for r in rankings)
     challenge_opened = _is_challenge_open()
     initialized = Runner.query.count() > 0
+    settings = _read_settings()
 
     return render_template('admin_dashboard.html',
                            groups=groups,
@@ -529,7 +531,8 @@ def admin_dashboard():
                            total_completed=total_completed,
                            total_runners=total_runners,
                            challenge_opened=challenge_opened,
-                           initialized=initialized)
+                           initialized=initialized,
+                           difficulty=settings.get('difficulty', 'medium'))
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -992,6 +995,12 @@ def admin_init_commit():
 
     # 운영 옵션 (리더보드 개인 랭킹 공개 여부 등)
     show_individual = bool(data.get('show_individual_ranking', True))
+    difficulty = data.get('difficulty', 'medium')
+    if difficulty not in ('easy', 'medium'):
+        return jsonify({
+            'ok': False, 'error_code': 'VALIDATION',
+            'message': f'unknown difficulty: {difficulty!r}'
+        }), 400
 
     # 6) init_database 실행 — 세션/엔진을 먼저 닫아야 Windows에서 DB 파일 삭제 가능
     db.session.remove()
@@ -1004,6 +1013,7 @@ def admin_init_commit():
             group_sizes=group_sizes,
             ordered_participants=norm_ordered,
             regen_challenge_data=regen,
+            difficulty=difficulty,
         )
     except Exception as e:
         return jsonify({
@@ -1018,6 +1028,7 @@ def admin_init_commit():
         _write_settings({
             'show_individual_ranking': show_individual,
             'challenge_opened': False,
+            'difficulty': difficulty,
         })
     except OSError:
         pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
