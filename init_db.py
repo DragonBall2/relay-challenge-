@@ -104,6 +104,7 @@ def init_database(
     group_sizes: list[int] | None = None,
     ordered_participants: list[dict] | None = None,
     regen_challenge_data: bool = False,
+    difficulty: str = 'medium',
 ) -> dict:
     """
     DB를 삭제 후 재생성하고 참가자·조·문제를 배정한다.
@@ -142,9 +143,10 @@ def init_database(
 
     # 문제 풀 재생성 (필요 시)
     if regen_challenge_data:
-        print(f"challenge_data.dat 재생성 (N={total})...")
+        print(f"challenge_data.dat 재생성 (N={total}, difficulty={difficulty})...")
         generate_main(
             total_problems=total,
+            difficulty=difficulty,
             output_path=os.path.join(BASE_DIR, "challenge_data.dat"),
             excel_path=os.path.join(BASE_DIR, "challenge_admin.xlsx"),
         )
@@ -176,8 +178,8 @@ def init_database(
 
         try:
             # 1. 문제 로드 (total개)
-            print(f"{total}개 문제 로드 중...")
-            problems = get_all_problems(total_problems=total)
+            print(f"{total}개 문제 로드 중 (difficulty={difficulty})...")
+            problems = get_all_problems(total_problems=total, difficulty=difficulty)
             if len(problems) < total:
                 raise RuntimeError(
                     f"문제 부족: 요청 {total}개, 생성 {len(problems)}개. "

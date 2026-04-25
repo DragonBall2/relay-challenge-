@@ -19,6 +19,12 @@
             🔒 비공개 (준비 중)
         </span>
         {% endif %}
+        {% if initialized %}
+        <span class="badge bg-info" style="font-size: 0.85rem; padding: 0.5rem 0.75rem; color: #000;"
+              title="현재 챌린지 난이도">
+            난이도: {{ 'Easy (1-hop)' if difficulty == 'easy' else 'Medium (2-hop)' }}
+        </span>
+        {% endif %}
     </div>
     <div>
         <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">5초마다 자동 갱신</span>
