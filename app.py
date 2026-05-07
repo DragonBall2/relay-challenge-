@@ -237,10 +237,12 @@ def index():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
     total_runners = sum(r['total'] for r in rankings)
+    settings = _read_settings()
     return render_template('index.html',
                            rankings=rankings,
                            total_completed=total_completed,
-                           total_runners=total_runners)
+                           total_runners=total_runners,
+                           show_individual=settings.get('show_individual_ranking', True))
 
 
 @app.route('/login', methods=['POST'])
