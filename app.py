@@ -12,7 +12,7 @@ from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, send_file, jsonify, abort, make_response)
-from models import db, Group, Runner, AttemptLog
+from models import db, Group, Runner, AttemptLog, SpareProblem
 import config
 
 
@@ -24,6 +24,8 @@ DEFAULT_SETTINGS = {
     'show_individual_ranking': True,
     'challenge_opened': False,   # 참가자에게 공개 여부. 관리자가 명시적으로 열어야 함.
     'difficulty': 'medium',      # easy | medium (hard는 차후)
+    'defer_penalty_seconds': 60, # 미루기 1회당 개인 랭킹에 더해지는 패널티 (초)
+    'buffer_ratio': 0.3,         # 스페어 풀 비율 (전체 인원 대비)
 }
 
 
@@ -40,6 +42,20 @@ def _write_settings(data: dict) -> None:
     merged = {**DEFAULT_SETTINGS, **_read_settings(), **data}
     with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
+
+
+def _swap_with_spare_problem(runner) -> bool:
+    """미사용 스페어 문제를 1건 가져와 runner의 문제를 교체.
+    성공하면 True, 스페어 풀이 비어있으면 False (동일 문제 유지)."""
+    spare = SpareProblem.query.filter_by(consumed_at=None).order_by(SpareProblem.id).first()
+    if spare is None:
+        return False
+    runner.problem_text = spare.problem_text
+    runner.problem_type = spare.problem_type
+    runner.correct_answer = spare.correct_answer
+    spare.consumed_at = datetime.utcnow()
+    spare.consumed_by_runner_id = runner.id
+    return True
 
 
 def _is_challenge_open() -> bool:
@@ -370,6 +386,11 @@ def defer():
     runner.started_at = None
     runner.attempts = 0
     runner.reason = reason or None
+    runner.deferred_count = (runner.deferred_count or 0) + 1
+    runner.submitted_answer = None
+
+    # 새 문제로 교체 (스페어 풀에서 1건). 풀 비어있으면 동일 문제 유지.
+    swapped = _swap_with_spare_problem(runner)
 
     # 당겨진 순서에 있는 waiting 주자 활성화
     next_runner = Runner.query.filter_by(
@@ -383,7 +404,10 @@ def defer():
 
     db.session.commit()
     session.pop('runner_id', None)
-    flash('차례를 맨 뒤로 미뤘습니다. 다음 주자가 활성화됩니다.', 'info')
+    if swapped:
+        flash('차례를 맨 뒤로 미뤘습니다. 다음 차례에는 새 문제가 출제됩니다.', 'info')
+    else:
+        flash('차례를 맨 뒤로 미뤘습니다. (스페어 풀 부족: 동일 문제 유지)', 'warning')
     return redirect(url_for('index'))
 
 
@@ -416,18 +440,27 @@ def success():
                            is_group_finished=is_group_finished)
 
 
-def get_individual_rankings(limit=20):
-    """개인 경과시간 랭킹 — status='completed' 주자만, 경과시간 오름차순."""
+def get_individual_rankings(limit=20, defer_penalty_seconds=60):
+    """개인 경과시간 랭킹 — status='completed' 주자만, 보정 경과시간 오름차순.
+
+    보정 경과시간 = (completed_at - started_at) + deferred_count * defer_penalty_seconds
+    """
     runners = Runner.query.filter_by(status='completed')\
         .filter(Runner.started_at.isnot(None))\
         .filter(Runner.completed_at.isnot(None)).all()
     items = []
     for r in runners:
-        elapsed = r.completed_at - r.started_at
+        raw = r.completed_at - r.started_at
+        defers = r.deferred_count or 0
+        penalty = timedelta(seconds=defers * defer_penalty_seconds)
+        adjusted = raw + penalty
         items.append({
             'runner': r,
-            'elapsed': elapsed,
-            'elapsed_seconds': int(elapsed.total_seconds()),
+            'elapsed': adjusted,                 # 보정값 (랭킹 기준)
+            'elapsed_seconds': int(adjusted.total_seconds()),
+            'raw_elapsed': raw,
+            'defers': defers,
+            'penalty': penalty,
         })
     items.sort(key=lambda x: x['elapsed_seconds'])
     for i, it in enumerate(items[:limit]):
@@ -441,11 +474,14 @@ def leaderboard():
     rankings = get_group_rankings()
     settings = _read_settings()
     show_individual = settings.get('show_individual_ranking', True)
-    individuals = get_individual_rankings(limit=10) if show_individual else []
+    penalty_sec = int(settings.get('defer_penalty_seconds', 60))
+    individuals = (get_individual_rankings(limit=10, defer_penalty_seconds=penalty_sec)
+                   if show_individual else [])
     return render_template('leaderboard.html',
                            rankings=rankings,
                            individuals=individuals,
-                           show_individual=show_individual)
+                           show_individual=show_individual,
+                           defer_penalty_seconds=penalty_sec)
 
 
 @app.route('/guide')
@@ -523,6 +559,9 @@ def admin_dashboard():
     challenge_opened = _is_challenge_open()
     initialized = Runner.query.count() > 0
     settings = _read_settings()
+    spare_total = SpareProblem.query.count()
+    spare_used = SpareProblem.query.filter(SpareProblem.consumed_at.isnot(None)).count()
+    spare_remaining = spare_total - spare_used
 
     return render_template('admin_dashboard.html',
                            groups=groups,
@@ -532,7 +571,11 @@ def admin_dashboard():
                            total_runners=total_runners,
                            challenge_opened=challenge_opened,
                            initialized=initialized,
-                           difficulty=settings.get('difficulty', 'medium'))
+                           difficulty=settings.get('difficulty', 'medium'),
+                           defer_penalty_seconds=int(settings.get('defer_penalty_seconds', 60)),
+                           spare_total=spare_total,
+                           spare_used=spare_used,
+                           spare_remaining=spare_remaining)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -602,12 +645,15 @@ def admin_defer(runner_id):
     for r in later_runners:
         r.run_order -= 1
 
-    # 해당 주자를 맨 뒤로 (시작 시간 초기화)
+    # 해당 주자를 맨 뒤로 (시작 시간 초기화 + 미루기 카운트 +1 + 새 문제 교체)
     runner.run_order = max_order
     runner.status = 'waiting'
     runner.password = ''
     runner.started_at = None
     runner.attempts = 0
+    runner.deferred_count = (runner.deferred_count or 0) + 1
+    runner.submitted_answer = None
+    swapped = _swap_with_spare_problem(runner)
 
     # active였으면 다음 주자(당겨진 순서) 활성화
     if was_active:
@@ -622,8 +668,9 @@ def admin_defer(runner_id):
 
     db.session.commit()
     if _is_ajax():
-        return jsonify({'ok': True})
-    flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째)', 'info')
+        return jsonify({'ok': True, 'swapped': swapped})
+    msg_suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+    flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째){msg_suffix}', 'info')
     return redirect(url_for('admin_dashboard'))
 
 
@@ -1001,6 +1048,18 @@ def admin_init_commit():
             'ok': False, 'error_code': 'VALIDATION',
             'message': f'unknown difficulty: {difficulty!r}'
         }), 400
+    try:
+        defer_penalty_seconds = int(data.get('defer_penalty_seconds', 60))
+        buffer_ratio = float(data.get('buffer_ratio', 0.3))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': 'defer_penalty_seconds/buffer_ratio 형식 오류'}), 400
+    if not (0 <= defer_penalty_seconds <= 600):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': '미루기 패널티는 0~600초 범위'}), 400
+    if not (0.0 <= buffer_ratio <= 0.5):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': '스페어 풀 비율은 0~50% 범위'}), 400
 
     # 6) init_database 실행 — 세션/엔진을 먼저 닫아야 Windows에서 DB 파일 삭제 가능
     db.session.remove()
@@ -1014,6 +1073,7 @@ def admin_init_commit():
             ordered_participants=norm_ordered,
             regen_challenge_data=regen,
             difficulty=difficulty,
+            buffer_ratio=buffer_ratio,
         )
     except Exception as e:
         return jsonify({
@@ -1029,6 +1089,8 @@ def admin_init_commit():
             'show_individual_ranking': show_individual,
             'challenge_opened': False,
             'difficulty': difficulty,
+            'defer_penalty_seconds': defer_penalty_seconds,
+            'buffer_ratio': buffer_ratio,
         })
     except OSError:
         pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
@@ -1040,6 +1102,7 @@ def admin_init_commit():
             'groups': result['groups'],
             'runners': result['runners'],
             'problems': result['runners'],
+            'spare_count': result.get('spare_count', 0),
         },
     })
 

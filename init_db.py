@@ -105,6 +105,7 @@ def init_database(
     ordered_participants: list[dict] | None = None,
     regen_challenge_data: bool = False,
     difficulty: str = 'medium',
+    buffer_ratio: float = 0.3,
 ) -> dict:
     """
     DB를 삭제 후 재생성하고 참가자·조·문제를 배정한다.
@@ -120,8 +121,9 @@ def init_database(
     }
     """
     sys.path.insert(0, BASE_DIR)
-    from models import db, Group, Runner
+    from models import db, Group, Runner, SpareProblem
     from flask import current_app, has_app_context
+    import math as _math
 
     # ordered_participants가 주어지면 N도 거기서 도출
     if ordered_participants is not None:
@@ -141,11 +143,15 @@ def init_database(
                 f"group_sizes 합({sum(group_sizes)}) != total({total})"
             )
 
+    # 스페어 풀: total + buffer 만큼 문제 생성
+    buffer_count = max(0, _math.ceil(total * float(buffer_ratio)))
+    grand_total = total + buffer_count
+
     # 문제 풀 재생성 (필요 시)
     if regen_challenge_data:
-        print(f"challenge_data.dat 재생성 (N={total}, difficulty={difficulty})...")
+        print(f"challenge_data.dat 재생성 (N={grand_total} = 본 {total} + 스페어 {buffer_count}, difficulty={difficulty})...")
         generate_main(
-            total_problems=total,
+            total_problems=grand_total,
             difficulty=difficulty,
             output_path=os.path.join(BASE_DIR, "challenge_data.dat"),
             excel_path=os.path.join(BASE_DIR, "challenge_admin.xlsx"),
@@ -177,15 +183,17 @@ def init_database(
         print("DB 테이블 생성 완료")
 
         try:
-            # 1. 문제 로드 (total개)
-            print(f"{total}개 문제 로드 중 (difficulty={difficulty})...")
-            problems = get_all_problems(total_problems=total, difficulty=difficulty)
-            if len(problems) < total:
+            # 1. 문제 로드 (총 grand_total개 = 본 + 스페어)
+            print(f"{grand_total}개 문제 로드 중 (본 {total} + 스페어 {buffer_count}, difficulty={difficulty})...")
+            problems = get_all_problems(total_problems=grand_total, difficulty=difficulty)
+            if len(problems) < grand_total:
                 raise RuntimeError(
-                    f"문제 부족: 요청 {total}개, 생성 {len(problems)}개. "
-                    "regen_challenge_data=True 로 재생성하세요."
+                    f"문제 부족: 요청 {grand_total}개, 생성 {len(problems)}개. "
+                    "regen_challenge_data=True 로 재생성하거나 buffer_ratio를 줄이세요."
                 )
-            print(f"  {len(problems)}개 문제 준비 완료")
+            main_problems = problems[:total]
+            spare_problems = problems[total:]
+            print(f"  본 {len(main_problems)}개 + 스페어 {len(spare_problems)}개 준비 완료")
 
             # 2. 참가자 순서 확정
             if ordered_participants is not None:
@@ -247,7 +255,7 @@ def init_database(
                 g_id = entry['group']
                 order = entry['order']
                 problem_idx = group_offsets[g_id - 1] + (order - 1)
-                problem = problems[problem_idx]
+                problem = main_problems[problem_idx]
 
                 if order == 1:
                     password = generate_password()
@@ -279,8 +287,15 @@ def init_database(
                     'answer': problem.answer,
                 })
 
+            # 스페어 풀 적재
+            for sp in spare_problems:
+                db.session.add(SpareProblem(
+                    problem_text=sp.text,
+                    problem_type=sp.ptype,
+                    correct_answer=sp.answer,
+                ))
             db.session.commit()
-            print(f"\n{group_count}개 조, {total}명 배정 완료")
+            print(f"\n{group_count}개 조, {total}명 배정 완료 (스페어 풀 {len(spare_problems)}개)")
 
         except Exception:
             db.session.rollback()
@@ -309,6 +324,7 @@ def init_database(
         'roster_path': roster_path,
         'runners': total,
         'groups': group_count,
+        'spare_count': buffer_count,
     }
 
 

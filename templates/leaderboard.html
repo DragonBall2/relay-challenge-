@@ -110,7 +110,10 @@
 <!-- 개인 랭킹 TOP N (동적) -->
 <h4 class="mt-5 mb-3" style="font-weight: 800;">개인 랭킹 TOP {{ individuals|length }}</h4>
 <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: -0.5rem;">
-    실제 답안을 제출하여 완료한 주자만 경과시간 오름차순으로 표시됩니다.
+    실제 답안을 제출하여 완료한 주자만 보정 경과시간 오름차순으로 표시됩니다.
+    {% if defer_penalty_seconds > 0 %}
+    미루기 1회당 +{{ defer_penalty_seconds }}초 패널티 적용.
+    {% endif %}
 </p>
 <div class="card">
     <div class="card-body p-0">
@@ -121,7 +124,8 @@
                         <th style="width: 60px;">순위</th>
                         <th>이름</th>
                         <th>조</th>
-                        <th>소요시간</th>
+                        <th>보정 소요시간</th>
+                        <th>원시 / 미루기</th>
                         <th>시도</th>
                     </tr>
                 </thead>
@@ -141,12 +145,18 @@
                         <td style="font-family: 'D2Coding', Consolas, monospace; font-size: 0.9rem;">
                             {{ format_timedelta(it.elapsed) }}
                         </td>
+                        <td style="font-family: 'D2Coding', Consolas, monospace; font-size: 0.85rem; color: var(--text-secondary);">
+                            {{ format_timedelta(it.raw_elapsed) }}
+                            {% if it.defers > 0 %}
+                            <span style="color: #f59e0b;">· 미루기 {{ it.defers }}회</span>
+                            {% endif %}
+                        </td>
                         <td>{{ it.runner.attempts }}</td>
                     </tr>
                     {% endfor %}
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center" style="color: var(--text-secondary); padding: 1.5rem;">
+                        <td colspan="6" class="text-center" style="color: var(--text-secondary); padding: 1.5rem;">
                             아직 완료한 주자가 없습니다.
                         </td>
                     </tr>
