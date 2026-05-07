@@ -24,7 +24,7 @@ DEFAULT_SETTINGS = {
     'show_individual_ranking': True,
     'challenge_opened': False,   # 참가자에게 공개 여부. 관리자가 명시적으로 열어야 함.
     'difficulty': 'medium',      # easy | medium (hard는 차후)
-    'defer_penalty_seconds': 60, # 미루기 1회당 개인 랭킹에 더해지는 패널티 (초)
+    'defer_penalty_seconds': 0,  # 미루기 1회당 개인 랭킹에 더해지는 패널티 (초). 0 = 패널티 없음
     'buffer_ratio': 0.3,         # 스페어 풀 비율 (전체 인원 대비)
 }
 
@@ -442,7 +442,7 @@ def success():
                            is_group_finished=is_group_finished)
 
 
-def get_individual_rankings(limit=20, defer_penalty_seconds=60):
+def get_individual_rankings(limit=20, defer_penalty_seconds=0):
     """개인 경과시간 랭킹 — status='completed' 주자만, 보정 경과시간 오름차순.
 
     보정 경과시간 = (completed_at - started_at) + deferred_count * defer_penalty_seconds
@@ -476,7 +476,7 @@ def leaderboard():
     rankings = get_group_rankings()
     settings = _read_settings()
     show_individual = settings.get('show_individual_ranking', True)
-    penalty_sec = int(settings.get('defer_penalty_seconds', 60))
+    penalty_sec = int(settings.get('defer_penalty_seconds', 0))
     individuals = (get_individual_rankings(limit=10, defer_penalty_seconds=penalty_sec)
                    if show_individual else [])
     return render_template('leaderboard.html',
@@ -574,7 +574,7 @@ def admin_dashboard():
                            challenge_opened=challenge_opened,
                            initialized=initialized,
                            difficulty=settings.get('difficulty', 'medium'),
-                           defer_penalty_seconds=int(settings.get('defer_penalty_seconds', 60)),
+                           defer_penalty_seconds=int(settings.get('defer_penalty_seconds', 0)),
                            spare_total=spare_total,
                            spare_used=spare_used,
                            spare_remaining=spare_remaining)
@@ -1051,7 +1051,7 @@ def admin_init_commit():
             'message': f'unknown difficulty: {difficulty!r}'
         }), 400
     try:
-        defer_penalty_seconds = int(data.get('defer_penalty_seconds', 60))
+        defer_penalty_seconds = int(data.get('defer_penalty_seconds', 0))
         buffer_ratio = float(data.get('buffer_ratio', 0.3))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error_code': 'VALIDATION',

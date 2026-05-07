@@ -95,9 +95,10 @@
           <div class="col-md-6">
             <label class="form-label" style="font-weight: 600;">미루기 패널티 (초)</label>
             <input type="number" class="form-control" id="input-defer-penalty"
-                   value="60" min="0" max="600" step="10">
+                   value="0" min="0" max="600" step="10">
             <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
-              미루기 1회당 개인 랭킹 elapsed에 더해지는 시간. 0 = 패널티 없음.
+              미루기 1회당 개인 랭킹 elapsed에 더해지는 시간 (기본: 0 = 패널티 없음).
+              새 문제 교체로 사전풀이 꼼수가 차단되므로 보통 0 권장.
             </div>
           </div>
           <div class="col-md-6">
