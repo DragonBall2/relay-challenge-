@@ -24,6 +24,15 @@
               title="현재 챌린지 난이도">
             난이도: {{ 'Easy (1-hop)' if difficulty == 'easy' else 'Medium (2-hop)' }}
         </span>
+        <span class="badge {{ 'bg-secondary' if spare_remaining > 0 else 'bg-danger' }}"
+              style="font-size: 0.85rem; padding: 0.5rem 0.75rem;"
+              title="미루기 시 교체용 스페어 문제 풀">
+            스페어: {{ spare_remaining }}/{{ spare_total }}
+        </span>
+        <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;"
+              title="미루기 1회당 개인 랭킹에 더해지는 패널티">
+            미루기 패널티: {{ defer_penalty_seconds }}초
+        </span>
         {% endif %}
     </div>
     <div>
