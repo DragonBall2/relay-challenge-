@@ -8,7 +8,8 @@
     <p>조별 진행현황 - 실시간 업데이트</p>
 </div>
 
-<!-- 상품 안내 -->
+<!-- 조별 시상 -->
+<h6 class="mb-2" style="font-weight: 700; color: var(--text-secondary);">조별 시상</h6>
 <div class="row g-3 mb-4 justify-content-center">
     <div class="col-md-2 col-sm-3">
         <div class="prize-card prize-gold">
@@ -107,8 +108,31 @@
 </div>
 
 {% if show_individual %}
+<!-- 개인 시상 -->
+<h6 class="mt-5 mb-2" style="font-weight: 700; color: var(--text-secondary);">개인 시상</h6>
+<div class="row g-3 mb-4 justify-content-center">
+    <div class="col-md-3 col-sm-4">
+        <div class="prize-card" style="background: linear-gradient(135deg, #ede9fe, #c4b5fd); border: 1px solid #8b5cf6; border-radius: 8px; padding: 1rem; text-align: center; color: var(--text-primary);">
+            <div style="font-size: 1.5rem; font-weight: 800;">1~3등</div>
+            <div style="font-size: 0.9rem; margin-top: 0.3rem;">모바일 문화상품권 3만원</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-4">
+        <div class="prize-card" style="background: linear-gradient(135deg, #dbeafe, #93c5fd); border: 1px solid #3b82f6; border-radius: 8px; padding: 1rem; text-align: center; color: var(--text-primary);">
+            <div style="font-size: 1.5rem; font-weight: 800;">4~6등</div>
+            <div style="font-size: 0.9rem; margin-top: 0.3rem;">모바일 문화상품권 2만원</div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-4">
+        <div class="prize-card" style="background: linear-gradient(135deg, #ccfbf1, #5eead4); border: 1px solid #14b8a6; border-radius: 8px; padding: 1rem; text-align: center; color: var(--text-primary);">
+            <div style="font-size: 1.5rem; font-weight: 800;">7~10등</div>
+            <div style="font-size: 0.9rem; margin-top: 0.3rem;">모바일 문화상품권 1만원</div>
+        </div>
+    </div>
+</div>
+
 <!-- 개인 랭킹 TOP N (동적) -->
-<h4 class="mt-5 mb-3" style="font-weight: 800;">개인 랭킹 TOP {{ individuals|length }}</h4>
+<h4 class="mb-3" style="font-weight: 800;">개인 랭킹 TOP {{ individuals|length }}</h4>
 <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: -0.5rem;">
     실제 답안을 제출하여 완료한 주자만 보정 경과시간 오름차순으로 표시됩니다.
     {% if defer_penalty_seconds > 0 %}
