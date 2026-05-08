@@ -76,6 +76,33 @@
         </div>
         {% endif %}
 
+        <!-- 후기 작성 -->
+        <div class="card mb-4">
+            <div class="card-header py-3">
+                <h5 class="mb-0" style="font-weight: 700;">후기 (선택)</h5>
+            </div>
+            <div class="card-body">
+                {% if runner.review %}
+                <div style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">
+                    작성한 후기 (수정 불가)
+                </div>
+                <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px;
+                            white-space: pre-wrap; word-break: break-word;">{{ runner.review }}</div>
+                {% else %}
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.75rem;">
+                    난이도, 에이전트 활용 경험, 개선 제안 등 자유롭게 적어주세요. 1회만 작성 가능합니다 (최대 300자).
+                </p>
+                <form method="POST" action="{{ url_for('submit_review') }}">
+                    <textarea class="form-control mb-2" name="review" rows="3" maxlength="300"
+                              placeholder="간단한 후기를 남겨주세요..."></textarea>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-samsung btn-sm">후기 저장</button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
         <div class="text-center">
             <a href="{{ url_for('leaderboard') }}" class="btn btn-samsung">
                 리더보드 보기

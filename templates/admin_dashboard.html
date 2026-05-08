@@ -52,7 +52,10 @@
             {% endif %}
         </form>
         {% endif %}
-        <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="btn-view-first-player">firstPlayer.txt</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#reviewsModal">
+            후기 ({{ reviews|length }})
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-1" id="btn-view-first-player">firstPlayer.txt</button>
         <button type="button" class="btn btn-outline-secondary btn-sm ms-1" id="btn-view-roster">groupRoster.txt</button>
         <a href="{{ url_for('admin_init_download', kind='challenge-data') }}" class="btn btn-outline-secondary btn-sm ms-1">challenge_data.dat</a>
         <a href="{{ url_for('admin_init_download', kind='relay-db') }}" class="btn btn-outline-secondary btn-sm ms-1" title="SQLite DB 스냅샷">relay.db</a>
@@ -63,6 +66,38 @@
 
 <div id="admin-dashboard-data">
     {% include "_admin_groups.html" %}
+</div>
+
+<!-- 후기 모달 -->
+<div class="modal fade" id="reviewsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background: var(--card-bg, #fff); color: var(--text-primary, #000);">
+      <div class="modal-header">
+        <h5 class="modal-title">참가자 후기 ({{ reviews|length }})</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        {% if reviews %}
+        {% for r in reviews %}
+        <div style="background: rgba(255,255,255,0.03); padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 0.6rem; border-left: 3px solid var(--samsung-blue-light);">
+          <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">
+            <strong style="color: var(--text-primary);">{{ r.name }}</strong>
+            <span>· {{ r.group.name }} · {{ r.run_order }}번째 주자</span>
+            {% if r.review_submitted_at %}
+            <span style="margin-left: 0.5rem;">· {{ r.review_submitted_at.strftime('%m-%d %H:%M') }}</span>
+            {% endif %}
+          </div>
+          <div style="white-space: pre-wrap; word-break: break-word; font-size: 0.95rem;">{{ r.review }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color: var(--text-secondary); text-align: center; padding: 2rem 0;">
+          아직 작성된 후기가 없습니다.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- groupRoster.txt 모달 (정답 포함 - 취급 주의) -->
