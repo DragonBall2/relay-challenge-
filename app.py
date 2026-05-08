@@ -413,6 +413,29 @@ def defer():
     return redirect(url_for('index'))
 
 
+@app.route('/review', methods=['POST'])
+@login_required
+def submit_review():
+    """완료한 주자가 success 페이지에서 후기를 1회 작성한다.
+    이미 후기가 있으면 거절(수정 불가)."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner or runner.status not in ('completed', 'passed'):
+        flash('완료한 주자만 후기를 작성할 수 있습니다.', 'warning')
+        return redirect(url_for('index'))
+    if runner.review:
+        flash('후기는 1회만 작성할 수 있습니다.', 'info')
+        return redirect(url_for('success'))
+    text = (request.form.get('review') or '').strip()[:300]
+    if not text:
+        flash('후기 내용을 입력하세요.', 'warning')
+        return redirect(url_for('success'))
+    runner.review = text
+    runner.review_submitted_at = datetime.utcnow()
+    db.session.commit()
+    flash('후기가 저장되었습니다. 감사합니다.', 'success')
+    return redirect(url_for('success'))
+
+
 @app.route('/success')
 @login_required
 def success():
@@ -565,6 +588,9 @@ def admin_dashboard():
     spare_used = SpareProblem.query.filter(SpareProblem.consumed_at.isnot(None)).count()
     spare_remaining = spare_total - spare_used
 
+    reviews = Runner.query.filter(Runner.review.isnot(None))\
+        .order_by(Runner.review_submitted_at.desc()).all()
+
     return render_template('admin_dashboard.html',
                            groups=groups,
                            grouped=grouped,
@@ -577,7 +603,8 @@ def admin_dashboard():
                            defer_penalty_seconds=int(settings.get('defer_penalty_seconds', 0)),
                            spare_total=spare_total,
                            spare_used=spare_used,
-                           spare_remaining=spare_remaining)
+                           spare_remaining=spare_remaining,
+                           reviews=reviews)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])

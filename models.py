@@ -33,6 +33,8 @@ class Runner(db.Model):
     next_runner_password = db.Column(db.String(20), nullable=True)
     reason = db.Column(db.String(200), nullable=True)
     deferred_count = db.Column(db.Integer, default=0)  # 누적 미루기 횟수 (개인 랭킹 패널티용)
+    review = db.Column(db.Text, nullable=True)         # 완료 후 후기 (선택, 최대 300자)
+    review_submitted_at = db.Column(db.DateTime, nullable=True)
 
 
 class AttemptLog(db.Model):
