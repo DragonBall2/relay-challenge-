@@ -91,6 +91,26 @@
           </div>
         </div>
 
+        <div class="row g-3 mt-1">
+          <div class="col-md-6">
+            <label class="form-label" style="font-weight: 600;">미루기 패널티 (초)</label>
+            <input type="number" class="form-control" id="input-defer-penalty"
+                   value="0" min="0" max="600" step="10">
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              미루기 1회당 개인 랭킹 elapsed에 더해지는 시간 (기본: 0 = 패널티 없음).
+              새 문제 교체로 사전풀이 꼼수가 차단되므로 보통 0 권장.
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" style="font-weight: 600;">스페어 풀 비율 (%)</label>
+            <input type="number" class="form-control" id="input-buffer-ratio"
+                   value="30" min="0" max="50" step="5">
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              미루기 시 새 문제로 교체하기 위한 예비 풀 비율. 0% = 항상 동일 문제.
+            </div>
+          </div>
+        </div>
+
         <div class="size-box" id="size-box"></div>
         <div class="warn-banner" id="pool-warn" style="display: none;"></div>
 
@@ -649,6 +669,8 @@
       force: el('opt-force').checked,
       show_individual_ranking: el('opt-show-individual').checked,
       difficulty: el('input-difficulty').value,
+      defer_penalty_seconds: parseInt(el('input-defer-penalty').value, 10),
+      buffer_ratio: parseFloat(el('input-buffer-ratio').value) / 100,
       confirm: el('confirm-input').value,
     };
 
@@ -680,8 +702,10 @@
   };
 
   function renderDone(data) {
+    const sp = data.summary.spare_count || 0;
     el('done-summary').innerHTML =
-      `✅ 조 ${data.summary.groups}개 / 주자 ${data.summary.runners}명 / 문제 ${data.summary.problems}개 세팅 완료`;
+      `✅ 조 ${data.summary.groups}개 / 주자 ${data.summary.runners}명 / 문제 ${data.summary.problems}개`
+      + ` · 스페어 풀 ${sp}개 (미루기용 새 문제)`;
     el('done-first-player').textContent = (data.first_player_lines || []).join('\n');
     goDone();
   }
