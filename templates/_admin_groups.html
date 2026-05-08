@@ -81,6 +81,19 @@
                                 {% elif runner.status == 'skipped' %}건너뜀
                                 {% endif %}
                             </span>
+                            {% if runner.status == 'active' and runner.last_seen_at %}
+                                {% set since = (now_utc - runner.last_seen_at).total_seconds() %}
+                                {% if since <= 300 %}
+                                <span title="최근 활동 (5분 이내)" style="color: #22c55e; margin-left: 0.3rem;">🟢</span>
+                                {% else %}
+                                <span title="마지막 활동" style="color: var(--text-secondary); font-size: 0.75rem; margin-left: 0.3rem;">
+                                    {% if since < 3600 %}{{ (since / 60)|int }}분 전
+                                    {% else %}{{ (since / 3600)|int }}시간 전{% endif %}
+                                </span>
+                                {% endif %}
+                            {% elif runner.status == 'active' %}
+                                <span title="아직 로그인 기록 없음" style="color: var(--text-secondary); font-size: 0.75rem; margin-left: 0.3rem;">미접속</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if runner.password %}
