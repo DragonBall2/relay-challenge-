@@ -35,6 +35,7 @@ class Runner(db.Model):
     deferred_count = db.Column(db.Integer, default=0)  # 누적 미루기 횟수 (개인 랭킹 패널티용)
     review = db.Column(db.Text, nullable=True)         # 완료 후 후기 (선택, 최대 300자)
     review_submitted_at = db.Column(db.DateTime, nullable=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)  # 마지막 활동 시각 (온라인 여부 추정용)
 
 
 class AttemptLog(db.Model):

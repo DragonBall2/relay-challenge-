@@ -122,6 +122,29 @@ def check_answer(submitted, correct, problem_type):
         return submitted == correct
 
 
+@app.before_request
+def _update_runner_last_seen():
+    """주자가 로그인된 상태에서 보내는 요청마다 last_seen_at 갱신.
+    30초 throttle 적용 (DB write 부하 방지)."""
+    rid = session.get('runner_id')
+    if not rid:
+        return
+    try:
+        runner = db.session.get(Runner, rid)
+    except Exception:
+        return
+    if not runner:
+        return
+    now = datetime.utcnow()
+    if runner.last_seen_at and (now - runner.last_seen_at).total_seconds() < 30:
+        return
+    runner.last_seen_at = now
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -604,7 +627,8 @@ def admin_dashboard():
                            spare_total=spare_total,
                            spare_used=spare_used,
                            spare_remaining=spare_remaining,
-                           reviews=reviews)
+                           reviews=reviews,
+                           now_utc=datetime.utcnow())
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -752,7 +776,8 @@ def admin_partial_groups():
                            grouped=grouped,
                            rankings=rankings,
                            total_completed=total_completed,
-                           total_runners=total_runners)
+                           total_runners=total_runners,
+                           now_utc=datetime.utcnow())
 
 
 @app.route('/admin/api/status')
