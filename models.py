@@ -32,6 +32,7 @@ class Runner(db.Model):
     submitted_answer = db.Column(db.String(200), nullable=True)
     next_runner_password = db.Column(db.String(20), nullable=True)
     reason = db.Column(db.String(200), nullable=True)
+    deferred_count = db.Column(db.Integer, default=0)  # 누적 미루기 횟수 (개인 랭킹 패널티용)
 
 
 class AttemptLog(db.Model):
@@ -41,3 +42,14 @@ class AttemptLog(db.Model):
     submitted_answer = db.Column(db.String(200))
     is_correct = db.Column(db.Boolean)
     submitted_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SpareProblem(db.Model):
+    """미루기 시 새 문제로 교체하기 위한 예비 문제 풀."""
+    __tablename__ = 'spare_problems'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    problem_text = db.Column(db.Text, nullable=False)
+    problem_type = db.Column(db.String(5), nullable=False)
+    correct_answer = db.Column(db.String(200), nullable=False)
+    consumed_at = db.Column(db.DateTime, nullable=True)  # 사용 시점 (NULL = 미사용)
+    consumed_by_runner_id = db.Column(db.Integer, db.ForeignKey('runners.id'), nullable=True)

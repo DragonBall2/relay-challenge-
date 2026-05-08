@@ -66,32 +66,57 @@
                 <h5 class="mb-0" style="font-weight: 700;">상품</h5>
             </div>
             <div class="card-body">
-                <div class="row g-2">
+                <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">조별 시상</div>
+                <div class="row g-2 mb-3">
                     <div class="col-3">
                         <div class="prize-card prize-gold">
-                            <div style="font-size: 1.5rem;">1st</div>
-                            <div style="font-size: 0.8rem; margin-top: 0.3rem;">잠바주스 12만원</div>
+                            <div style="font-size: 1.5rem;">1등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">잠바주스 12만원</div>
                         </div>
                     </div>
                     <div class="col-3">
                         <div class="prize-card prize-silver">
-                            <div style="font-size: 1.5rem;">2nd</div>
-                            <div style="font-size: 0.8rem; margin-top: 0.3rem;">잠바주스 9만원</div>
+                            <div style="font-size: 1.5rem;">2등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">잠바주스 9만원</div>
                         </div>
                     </div>
                     <div class="col-3">
                         <div class="prize-card prize-bronze">
-                            <div style="font-size: 1.5rem;">3rd</div>
-                            <div style="font-size: 0.8rem; margin-top: 0.3rem;">잠바주스 6만원</div>
+                            <div style="font-size: 1.5rem;">3등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">잠바주스 6만원</div>
                         </div>
                     </div>
                     <div class="col-3">
                         <div class="prize-card" style="background: linear-gradient(135deg, #e0f2fe, #bae6fd); border: 1px solid #38bdf8; border-radius: 8px; padding: 0.75rem; text-align: center; color: var(--text-primary);">
                             <div style="font-size: 1.5rem;">완주</div>
-                            <div style="font-size: 0.8rem; margin-top: 0.3rem;">던킨쿠폰 4만원</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">던킨쿠폰 4만원</div>
                         </div>
                     </div>
                 </div>
+
+                {% if show_individual %}
+                <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">개인 시상</div>
+                <div class="row g-2">
+                    <div class="col-4">
+                        <div class="prize-card" style="background: linear-gradient(135deg, #ede9fe, #c4b5fd); border: 1px solid #8b5cf6; border-radius: 8px; padding: 0.75rem; text-align: center; color: var(--text-primary);">
+                            <div style="font-size: 1.1rem; font-weight: 800;">1~3등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">문화상품권 3만원</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="prize-card" style="background: linear-gradient(135deg, #dbeafe, #93c5fd); border: 1px solid #3b82f6; border-radius: 8px; padding: 0.75rem; text-align: center; color: var(--text-primary);">
+                            <div style="font-size: 1.1rem; font-weight: 800;">4~6등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">문화상품권 2만원</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="prize-card" style="background: linear-gradient(135deg, #ccfbf1, #5eead4); border: 1px solid #14b8a6; border-radius: 8px; padding: 0.75rem; text-align: center; color: var(--text-primary);">
+                            <div style="font-size: 1.1rem; font-weight: 800;">7~10등</div>
+                            <div style="font-size: 0.75rem; margin-top: 0.3rem;">문화상품권 1만원</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
