@@ -101,12 +101,20 @@
               새 문제 교체로 사전풀이 꼼수가 차단되므로 보통 0 권장.
             </div>
           </div>
-          <div class="col-md-6">
+          <div class="col-md-4">
             <label class="form-label" style="font-weight: 600;">스페어 풀 비율 (%)</label>
             <input type="number" class="form-control" id="input-buffer-ratio"
                    value="30" min="0" max="50" step="5">
             <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
               미루기 시 새 문제로 교체하기 위한 예비 풀 비율. 0% = 항상 동일 문제.
+            </div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label" style="font-weight: 600;">데이터셋 시드</label>
+            <input type="number" class="form-control" id="input-seed"
+                   value="2026" min="1" max="999999" step="1">
+            <div style="color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.25rem;">
+              부서별 다른 시드 → 다른 데이터·답.
             </div>
           </div>
         </div>
@@ -671,6 +679,7 @@
       difficulty: el('input-difficulty').value,
       defer_penalty_seconds: parseInt(el('input-defer-penalty').value, 10),
       buffer_ratio: parseFloat(el('input-buffer-ratio').value) / 100,
+      seed: parseInt(el('input-seed').value, 10),
       confirm: el('confirm-input').value,
     };
 

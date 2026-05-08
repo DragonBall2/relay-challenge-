@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
     'difficulty': 'medium',      # easy | medium (hard는 차후)
     'defer_penalty_seconds': 0,  # 미루기 1회당 개인 랭킹에 더해지는 패널티 (초). 0 = 패널티 없음
     'buffer_ratio': 0.3,         # 스페어 풀 비율 (전체 인원 대비)
+    'seed': 2026,                # 데이터셋 시드 (부서별 다른 데이터/답을 쓰고 싶을 때)
 }
 
 
@@ -624,6 +625,7 @@ def admin_dashboard():
                            initialized=initialized,
                            difficulty=settings.get('difficulty', 'medium'),
                            defer_penalty_seconds=int(settings.get('defer_penalty_seconds', 0)),
+                           seed=int(settings.get('seed', 2026)),
                            spare_total=spare_total,
                            spare_used=spare_used,
                            spare_remaining=spare_remaining,
@@ -1105,15 +1107,19 @@ def admin_init_commit():
     try:
         defer_penalty_seconds = int(data.get('defer_penalty_seconds', 0))
         buffer_ratio = float(data.get('buffer_ratio', 0.3))
+        seed = int(data.get('seed', 2026))
     except (TypeError, ValueError):
         return jsonify({'ok': False, 'error_code': 'VALIDATION',
-                        'message': 'defer_penalty_seconds/buffer_ratio 형식 오류'}), 400
+                        'message': 'defer_penalty_seconds/buffer_ratio/seed 형식 오류'}), 400
     if not (0 <= defer_penalty_seconds <= 600):
         return jsonify({'ok': False, 'error_code': 'VALIDATION',
                         'message': '미루기 패널티는 0~600초 범위'}), 400
     if not (0.0 <= buffer_ratio <= 0.5):
         return jsonify({'ok': False, 'error_code': 'VALIDATION',
                         'message': '스페어 풀 비율은 0~50% 범위'}), 400
+    if not (1 <= seed <= 999999):
+        return jsonify({'ok': False, 'error_code': 'VALIDATION',
+                        'message': '시드는 1~999999 범위 정수'}), 400
 
     # 6) init_database 실행 — 세션/엔진을 먼저 닫아야 Windows에서 DB 파일 삭제 가능
     db.session.remove()
@@ -1128,6 +1134,7 @@ def admin_init_commit():
             regen_challenge_data=regen,
             difficulty=difficulty,
             buffer_ratio=buffer_ratio,
+            seed=seed,
         )
     except Exception as e:
         return jsonify({
@@ -1145,6 +1152,7 @@ def admin_init_commit():
             'difficulty': difficulty,
             'defer_penalty_seconds': defer_penalty_seconds,
             'buffer_ratio': buffer_ratio,
+            'seed': seed,
         })
     except OSError:
         pass  # 파일 쓰기 실패해도 초기화 자체는 성공으로 간주
