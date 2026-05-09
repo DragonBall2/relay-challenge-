@@ -335,7 +335,14 @@ def challenge():
     if runner.status in ('completed', 'passed'):
         return redirect(url_for('success'))
 
-    return render_template('challenge.html', runner=runner)
+    # 순서 교환 후보: 같은 조에서 본인보다 뒤이면서 대기 중인 주자
+    swap_candidates = Runner.query.filter(
+        Runner.group_id == runner.group_id,
+        Runner.run_order > runner.run_order,
+        Runner.status == 'waiting',
+    ).order_by(Runner.run_order).all()
+
+    return render_template('challenge.html', runner=runner, swap_candidates=swap_candidates)
 
 
 @app.route('/submit', methods=['POST'])
@@ -434,6 +441,64 @@ def defer():
         flash('차례를 맨 뒤로 미뤘습니다. 다음 차례에는 새 문제가 출제됩니다.', 'info')
     else:
         flash('차례를 맨 뒤로 미뤘습니다. (스페어 풀 부족: 동일 문제 유지)', 'warning')
+    return redirect(url_for('index'))
+
+
+@app.route('/defer/swap', methods=['POST'])
+@login_required
+def defer_swap():
+    """본인 차례를 같은 조의 특정 미진행 주자(run_order 더 뒤, status='waiting')와 교환."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner or runner.status != 'active':
+        flash('현재 진행 중인 주자만 사용할 수 있습니다.', 'warning')
+        return redirect(url_for('index'))
+
+    try:
+        target_order = int(request.form.get('target_order', 0))
+    except ValueError:
+        flash('대상 순서를 선택하세요.', 'warning')
+        return redirect(url_for('challenge'))
+
+    target = Runner.query.filter_by(
+        group_id=runner.group_id,
+        run_order=target_order,
+        status='waiting',
+    ).first()
+    if not target:
+        flash('해당 순서의 대기 중인 주자를 찾을 수 없습니다.', 'warning')
+        return redirect(url_for('challenge'))
+    if target.id == runner.id or target.run_order <= runner.run_order:
+        flash('본인보다 뒤의 대기 중인 주자만 선택할 수 있습니다.', 'warning')
+        return redirect(url_for('challenge'))
+
+    reason = request.form.get('reason', '').strip()[:200]
+    my_order = runner.run_order
+
+    # 순서 교환 — 두 주자의 run_order만 swap (다른 주자는 영향 없음)
+    runner.run_order = target.run_order
+    target.run_order = my_order
+
+    # 본인은 waiting으로, 새 문제 교체, 미루기 카운트 증가
+    runner.status = 'waiting'
+    runner.password = ''
+    runner.started_at = None
+    runner.attempts = 0
+    runner.deferred_count = (runner.deferred_count or 0) + 1
+    runner.submitted_answer = None
+    runner.reason = reason or None
+    swapped = _swap_with_spare_problem(runner)
+
+    # 대상 주자 활성화
+    password = generate_password()
+    target.password = password
+    target.status = 'active'
+
+    db.session.commit()
+    session.pop('runner_id', None)
+    if swapped:
+        flash(f'{target.name}님과 순서를 바꿨습니다. 다시 차례가 오면 새 문제가 출제됩니다.', 'info')
+    else:
+        flash(f'{target.name}님과 순서를 바꿨습니다. (스페어 부족: 동일 문제 유지)', 'warning')
     return redirect(url_for('index'))
 
 
