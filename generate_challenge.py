@@ -996,17 +996,18 @@ def _scaled_data_sizes(total_problems: int) -> dict:
 DIFFICULTY_LEVELS = ('easy', 'medium')  # 'hard'는 이번 범위 밖
 
 
-def _build_pools(total_problems: int, difficulty: str = 'medium'):
+def _build_pools(total_problems: int, difficulty: str = 'medium', seed: int = SEED):
     """유형별 풀을 생성해 (pools, data_bundle) 반환. 내부에서 seed 재설정.
 
     difficulty:
-      - 'easy'  : Type A/C/D/E (1-hop, 4유형)
-      - 'medium': Type F/G/H/I/J (2-hop, 5유형) — 현재 2차 기본
+      - 'easy'  : Type A/B/C/D/E
+      - 'medium': Type F/G/H/I/J (2-hop 균일)
+    seed: 데이터·문제 생성 시드. 기본 SEED(2026).
     """
     if difficulty not in DIFFICULTY_LEVELS:
         raise ValueError(f"unknown difficulty: {difficulty!r} (allowed: {DIFFICULTY_LEVELS})")
 
-    random.seed(SEED)
+    random.seed(seed)
     sizes = _scaled_data_sizes(total_problems)
 
     employees = generate_employees(sizes["n_employees"])
@@ -1307,17 +1308,18 @@ def create_excel(all_problems, filename="challenge_admin.xlsx"):
 # ============================================================
 def main(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
          difficulty: str = 'medium',
+         seed: int = SEED,
          output_path: str = "challenge_data.dat",
          excel_path: str = "challenge_admin.xlsx"):
     if difficulty not in DIFFICULTY_LEVELS:
         raise ValueError(f"unknown difficulty: {difficulty!r}")
 
     print("=" * 60)
-    print(f"코딩 에이전트 릴레이 설치 챌린지 (N={total_problems}, difficulty={difficulty})")
+    print(f"코딩 에이전트 릴레이 설치 챌린지 (N={total_problems}, difficulty={difficulty}, seed={seed})")
     print("=" * 60)
 
     # 1~3. 섹션 데이터 생성 + challenge_data.dat 작성 + 풀 빌드
-    pools, bundle = _build_pools(total_problems, difficulty=difficulty)
+    pools, bundle = _build_pools(total_problems, difficulty=difficulty, seed=seed)
     all_sections = bundle["all_sections"]
 
     print(f"  총 {len(all_sections)}개 섹션 생성")
@@ -1376,9 +1378,10 @@ def main(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
 
 
 def get_all_problems(total_problems: int = DEFAULT_TOTAL_PROBLEMS,
-                     difficulty: str = 'medium'):
+                     difficulty: str = 'medium',
+                     seed: int = SEED):
     """외부에서 호출하여 total_problems개 문제 목록을 반환."""
-    pools, _bundle = _build_pools(total_problems, difficulty=difficulty)
+    pools, _bundle = _build_pools(total_problems, difficulty=difficulty, seed=seed)
     total_generated = sum(len(p) for p in pools)
     if total_generated < total_problems:
         raise RuntimeError(
@@ -1391,12 +1394,19 @@ if __name__ == "__main__":
     import sys
     n = DEFAULT_TOTAL_PROBLEMS
     diff = 'medium'
+    sd = SEED
     if len(sys.argv) > 1:
         try:
             n = int(sys.argv[1])
         except ValueError:
-            print(f"사용법: python generate_challenge.py [total_problems] [easy|medium]")
+            print(f"사용법: python generate_challenge.py [total_problems] [easy|medium] [seed]")
             sys.exit(1)
     if len(sys.argv) > 2:
         diff = sys.argv[2]
-    main(total_problems=n, difficulty=diff)
+    if len(sys.argv) > 3:
+        try:
+            sd = int(sys.argv[3])
+        except ValueError:
+            print(f"seed는 정수여야 합니다.")
+            sys.exit(1)
+    main(total_problems=n, difficulty=diff, seed=sd)
