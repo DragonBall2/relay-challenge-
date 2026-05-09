@@ -125,7 +125,8 @@ function deferConfirm(ev) {
         return false;
     }
     const msg = (steps === max ? '맨 뒤로 이동' : steps + '칸 뒤로 이동') +
-        '하시겠습니까?\n로그아웃되며, 차례가 다시 돌아오면 재로그인 해야 합니다.';
+        '하시겠습니까?\n다음 주자에게 전달할 비밀번호가 표시됩니다. ' +
+        '차례가 다시 돌아오면 재로그인 해야 합니다.';
     if (!confirm(msg)) {
         ev.preventDefault();
         return false;
@@ -148,7 +149,8 @@ function swapConfirm(ev) {
         return false;
     }
     const text = sel.options[sel.selectedIndex].text;
-    if (!confirm('정말 ' + text + ' 와(과) 순서를 교환하시겠습니까?\n로그아웃되며, 차례가 다시 돌아오면 재로그인 해야 합니다.')) {
+    if (!confirm('정말 ' + text + ' 와(과) 순서를 교환하시겠습니까?\n' +
+        '다음 주자에게 전달할 비밀번호가 표시됩니다. 차례가 다시 돌아오면 재로그인 해야 합니다.')) {
         ev.preventDefault();
         return false;
     }
