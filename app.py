@@ -334,6 +334,13 @@ def challenge():
 
     if runner.status in ('completed', 'passed'):
         return redirect(url_for('success'))
+    # 미루기/교환 직후 (waiting + next_runner_password): 결과 페이지로
+    if runner.status == 'waiting' and runner.next_runner_password:
+        return redirect(url_for('defer_result'))
+    if runner.status != 'active':
+        flash('현재 진행 중인 주자만 접속할 수 있습니다.', 'warning')
+        session.pop('runner_id', None)
+        return redirect(url_for('index'))
 
     # 순서 교환 후보: 같은 조에서 본인보다 뒤이면서 대기 중인 주자
     swap_candidates = Runner.query.filter(
@@ -440,21 +447,22 @@ def defer():
     # 새 문제로 교체 (스페어 풀에서 1건). 풀 비어있으면 동일 문제 유지.
     swapped = _swap_with_spare_problem(runner)
 
-    # 당겨진 순서(old_order)의 waiting 주자 활성화
+    # 당겨진 순서(old_order)의 waiting 주자 활성화 + 새 비번을 본인에게도 전달용으로 저장
     next_runner = Runner.query.filter_by(
         group_id=runner.group_id,
         run_order=old_order,
     ).first()
+    new_password = None
     if next_runner and next_runner.status == 'waiting':
-        password = generate_password()
-        next_runner.password = password
+        new_password = generate_password()
+        next_runner.password = new_password
         next_runner.status = 'active'
+        runner.next_runner_password = new_password
 
     db.session.commit()
-    session.pop('runner_id', None)
     suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
-    flash(f'{steps}칸 뒤로 이동했습니다. 차례가 다시 돌아오면 새 문제가 출제됩니다.{suffix}', 'info')
-    return redirect(url_for('index'))
+    flash(f'{steps}칸 뒤로 이동했습니다. 다음 주자에게 비밀번호를 전달하세요.{suffix}', 'info')
+    return redirect(url_for('defer_result'))
 
 
 @app.route('/defer/swap', methods=['POST'])
@@ -501,18 +509,36 @@ def defer_swap():
     runner.reason = reason or None
     swapped = _swap_with_spare_problem(runner)
 
-    # 대상 주자 활성화
-    password = generate_password()
-    target.password = password
+    # 대상 주자 활성화 + 새 비번을 본인 next_runner_password에도 저장
+    new_password = generate_password()
+    target.password = new_password
     target.status = 'active'
+    runner.next_runner_password = new_password
 
     db.session.commit()
-    session.pop('runner_id', None)
-    if swapped:
-        flash(f'{target.name}님과 순서를 바꿨습니다. 다시 차례가 오면 새 문제가 출제됩니다.', 'info')
-    else:
-        flash(f'{target.name}님과 순서를 바꿨습니다. (스페어 부족: 동일 문제 유지)', 'warning')
-    return redirect(url_for('index'))
+    suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+    flash(f'{target.name}님과 순서를 바꿨습니다. 그분에게 비밀번호를 전달하세요.{suffix}', 'info')
+    return redirect(url_for('defer_result'))
+
+
+@app.route('/defer/result')
+@login_required
+def defer_result():
+    """미루기/교환 직후 안내 페이지 — 새 활성 주자 정보와 비밀번호 표시."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner:
+        return redirect(url_for('index'))
+    # 본인이 미루기 직후 상태 — waiting + next_runner_password 채워져 있어야 함
+    if runner.status != 'waiting' or not runner.next_runner_password:
+        return redirect(url_for('index'))
+    # 새 활성 주자 = 같은 조에서 status='active' 인 주자 (방금 활성화된 사람)
+    new_active = Runner.query.filter_by(
+        group_id=runner.group_id, status='active',
+    ).first()
+    return render_template('defer_result.html',
+                           runner=runner,
+                           new_active=new_active,
+                           next_password=runner.next_runner_password)
 
 
 @app.route('/review', methods=['POST'])
