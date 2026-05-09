@@ -334,8 +334,22 @@ def challenge():
 
     if runner.status in ('completed', 'passed'):
         return redirect(url_for('success'))
+    # 미루기/교환 직후 (waiting + next_runner_password): 결과 페이지로
+    if runner.status == 'waiting' and runner.next_runner_password:
+        return redirect(url_for('defer_result'))
+    if runner.status != 'active':
+        flash('현재 진행 중인 주자만 접속할 수 있습니다.', 'warning')
+        session.pop('runner_id', None)
+        return redirect(url_for('index'))
 
-    return render_template('challenge.html', runner=runner)
+    # 순서 교환 후보: 같은 조에서 본인보다 뒤이면서 대기 중인 주자
+    swap_candidates = Runner.query.filter(
+        Runner.group_id == runner.group_id,
+        Runner.run_order > runner.run_order,
+        Runner.status == 'waiting',
+    ).order_by(Runner.run_order).all()
+
+    return render_template('challenge.html', runner=runner, swap_candidates=swap_candidates)
 
 
 @app.route('/submit', methods=['POST'])
@@ -383,7 +397,10 @@ def submit():
 @app.route('/defer', methods=['POST'])
 @login_required
 def defer():
-    """주자 본인이 자기 차례를 조 맨 뒤로 미룸."""
+    """주자 본인이 자기 차례를 N칸 뒤로 이동.
+    steps=N: 본인이 X번 주자라면 (X+N)번 자리로 이동. 사이 주자 N명은 1칸씩 앞당겨짐.
+    N == max_steps(=max_order - X)면 맨 뒤로 미루는 효과.
+    """
     runner = db.session.get(Runner, session['runner_id'])
     if not runner or runner.status != 'active':
         flash('현재 진행 중인 주자만 미룰 수 있습니다.', 'warning')
@@ -392,21 +409,33 @@ def defer():
     old_order = runner.run_order
     max_order = db.session.query(db.func.max(Runner.run_order))\
         .filter_by(group_id=runner.group_id).scalar()
+    max_steps = max_order - old_order
 
-    if old_order == max_order:
+    if max_steps < 1:
         flash('이미 마지막 주자라 더 미룰 수 없습니다.', 'info')
         return redirect(url_for('challenge'))
 
-    # 뒤에 있는 주자들을 1씩 당김
-    later_runners = Runner.query.filter(
+    try:
+        steps = int(request.form.get('steps', 0))
+    except (TypeError, ValueError):
+        steps = 0
+    if steps < 1 or steps > max_steps:
+        flash(f'이동 칸 수는 1~{max_steps} 범위여야 합니다.', 'warning')
+        return redirect(url_for('challenge'))
+
+    new_order = old_order + steps
+
+    # 사이 주자(old_order < x ≤ new_order)들은 1씩 앞당김
+    between_runners = Runner.query.filter(
         Runner.group_id == runner.group_id,
-        Runner.run_order > old_order
+        Runner.run_order > old_order,
+        Runner.run_order <= new_order,
     ).order_by(Runner.run_order).all()
-    for r in later_runners:
+    for r in between_runners:
         r.run_order -= 1
 
     reason = request.form.get('reason', '').strip()[:200]
-    runner.run_order = max_order
+    runner.run_order = new_order
     runner.status = 'waiting'
     runner.password = ''
     runner.started_at = None
@@ -418,23 +447,98 @@ def defer():
     # 새 문제로 교체 (스페어 풀에서 1건). 풀 비어있으면 동일 문제 유지.
     swapped = _swap_with_spare_problem(runner)
 
-    # 당겨진 순서에 있는 waiting 주자 활성화
+    # 당겨진 순서(old_order)의 waiting 주자 활성화 + 새 비번을 본인에게도 전달용으로 저장
     next_runner = Runner.query.filter_by(
         group_id=runner.group_id,
-        run_order=old_order
+        run_order=old_order,
     ).first()
+    new_password = None
     if next_runner and next_runner.status == 'waiting':
-        password = generate_password()
-        next_runner.password = password
+        new_password = generate_password()
+        next_runner.password = new_password
         next_runner.status = 'active'
+        runner.next_runner_password = new_password
 
     db.session.commit()
-    session.pop('runner_id', None)
-    if swapped:
-        flash('차례를 맨 뒤로 미뤘습니다. 다음 차례에는 새 문제가 출제됩니다.', 'info')
-    else:
-        flash('차례를 맨 뒤로 미뤘습니다. (스페어 풀 부족: 동일 문제 유지)', 'warning')
-    return redirect(url_for('index'))
+    suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+    flash(f'{steps}칸 뒤로 이동했습니다. 다음 주자에게 비밀번호를 전달하세요.{suffix}', 'info')
+    return redirect(url_for('defer_result'))
+
+
+@app.route('/defer/swap', methods=['POST'])
+@login_required
+def defer_swap():
+    """본인 차례를 같은 조의 특정 미진행 주자(run_order 더 뒤, status='waiting')와 교환."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner or runner.status != 'active':
+        flash('현재 진행 중인 주자만 사용할 수 있습니다.', 'warning')
+        return redirect(url_for('index'))
+
+    try:
+        target_order = int(request.form.get('target_order', 0))
+    except ValueError:
+        flash('대상 순서를 선택하세요.', 'warning')
+        return redirect(url_for('challenge'))
+
+    target = Runner.query.filter_by(
+        group_id=runner.group_id,
+        run_order=target_order,
+        status='waiting',
+    ).first()
+    if not target:
+        flash('해당 순서의 대기 중인 주자를 찾을 수 없습니다.', 'warning')
+        return redirect(url_for('challenge'))
+    if target.id == runner.id or target.run_order <= runner.run_order:
+        flash('본인보다 뒤의 대기 중인 주자만 선택할 수 있습니다.', 'warning')
+        return redirect(url_for('challenge'))
+
+    reason = request.form.get('reason', '').strip()[:200]
+    my_order = runner.run_order
+
+    # 순서 교환 — 두 주자의 run_order만 swap (다른 주자는 영향 없음)
+    runner.run_order = target.run_order
+    target.run_order = my_order
+
+    # 본인은 waiting으로, 새 문제 교체, 미루기 카운트 증가
+    runner.status = 'waiting'
+    runner.password = ''
+    runner.started_at = None
+    runner.attempts = 0
+    runner.deferred_count = (runner.deferred_count or 0) + 1
+    runner.submitted_answer = None
+    runner.reason = reason or None
+    swapped = _swap_with_spare_problem(runner)
+
+    # 대상 주자 활성화 + 새 비번을 본인 next_runner_password에도 저장
+    new_password = generate_password()
+    target.password = new_password
+    target.status = 'active'
+    runner.next_runner_password = new_password
+
+    db.session.commit()
+    suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+    flash(f'{target.name}님과 순서를 바꿨습니다. 그분에게 비밀번호를 전달하세요.{suffix}', 'info')
+    return redirect(url_for('defer_result'))
+
+
+@app.route('/defer/result')
+@login_required
+def defer_result():
+    """미루기/교환 직후 안내 페이지 — 새 활성 주자 정보와 비밀번호 표시."""
+    runner = db.session.get(Runner, session['runner_id'])
+    if not runner:
+        return redirect(url_for('index'))
+    # 본인이 미루기 직후 상태 — waiting + next_runner_password 채워져 있어야 함
+    if runner.status != 'waiting' or not runner.next_runner_password:
+        return redirect(url_for('index'))
+    # 새 활성 주자 = 같은 조에서 status='active' 인 주자 (방금 활성화된 사람)
+    new_active = Runner.query.filter_by(
+        group_id=runner.group_id, status='active',
+    ).first()
+    return render_template('defer_result.html',
+                           runner=runner,
+                           new_active=new_active,
+                           next_password=runner.next_runner_password)
 
 
 @app.route('/review', methods=['POST'])
@@ -627,6 +731,17 @@ def admin_dashboard():
     reviews = Runner.query.filter(Runner.review.isnot(None))\
         .order_by(Runner.review_submitted_at.desc()).all()
 
+    # 미루기 모달용: 각 주자별 교환 후보 (같은 조 + 본인 뒤 + waiting)
+    defer_candidates = {}
+    for r in all_runners:
+        if r.status in ('waiting', 'active'):
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.run_order > r.run_order]
+            defer_candidates[r.id] = [
+                {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
+                for c in cands
+            ]
+
     return render_template('admin_dashboard.html',
                            groups=groups,
                            grouped=grouped,
@@ -642,7 +757,8 @@ def admin_dashboard():
                            spare_used=spare_used,
                            spare_remaining=spare_remaining,
                            reviews=reviews,
-                           now_utc=datetime.utcnow())
+                           now_utc=datetime.utcnow(),
+                           defer_candidates=defer_candidates)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -687,6 +803,11 @@ def admin_pass(runner_id):
 @app.route('/admin/defer/<int:runner_id>', methods=['POST'])
 @admin_required
 def admin_defer(runner_id):
+    """관리자 미루기. mode 파라미터:
+    - 'max'(기본): 조 맨 뒤로 (기존 동작)
+    - 'steps': steps 칸 뒤로
+    - 'swap':  target_order 의 waiting 주자와 1:1 교환
+    """
     runner = Runner.query.get_or_404(runner_id)
     if runner.status not in ('waiting', 'active'):
         flash('대기 중 또는 진행 중인 주자만 미룰 수 있습니다.', 'warning')
@@ -695,49 +816,90 @@ def admin_defer(runner_id):
     was_active = runner.status == 'active'
     old_order = runner.run_order
 
-    # 조의 마지막 run_order 조회
     max_order = db.session.query(db.func.max(Runner.run_order))\
         .filter_by(group_id=runner.group_id).scalar()
-
     if old_order == max_order:
         flash(f'{runner.name}은(는) 이미 마지막 주자입니다.', 'info')
         return redirect(url_for('admin_dashboard'))
 
-    # old_order보다 뒤에 있는 waiting 주자들의 순서를 1씩 당기기
-    later_runners = Runner.query.filter(
-        Runner.group_id == runner.group_id,
-        Runner.run_order > old_order
-    ).order_by(Runner.run_order).all()
+    mode = request.form.get('mode', 'max')
+    reason = request.form.get('reason', '').strip()[:200]
 
-    for r in later_runners:
-        r.run_order -= 1
+    # ---- swap 모드 ----
+    if mode == 'swap':
+        try:
+            target_order = int(request.form.get('target_order', 0))
+        except (TypeError, ValueError):
+            target_order = 0
+        target = Runner.query.filter_by(
+            group_id=runner.group_id, run_order=target_order, status='waiting',
+        ).first()
+        if not target or target.run_order <= old_order:
+            msg = '대상 주자가 유효하지 않습니다 (본인 뒤의 대기 주자만 가능).'
+            if _is_ajax():
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, 'warning')
+            return redirect(url_for('admin_dashboard'))
+        # 1:1 swap
+        runner.run_order = target.run_order
+        target.run_order = old_order
+        if was_active:
+            password = generate_password()
+            target.password = password
+            target.status = 'active'
+        new_order = runner.run_order
+    # ---- steps / max 모드 ----
+    else:
+        if mode == 'steps':
+            try:
+                steps = int(request.form.get('steps', 0))
+            except (TypeError, ValueError):
+                steps = 0
+            max_steps = max_order - old_order
+            if steps < 1 or steps > max_steps:
+                msg = f'이동 칸 수는 1~{max_steps} 범위여야 합니다.'
+                if _is_ajax():
+                    return jsonify({'ok': False, 'message': msg}), 400
+                flash(msg, 'warning')
+                return redirect(url_for('admin_dashboard'))
+            new_order = old_order + steps
+        else:  # 'max'
+            new_order = max_order
 
-    # 해당 주자를 맨 뒤로 (시작 시간 초기화 + 미루기 카운트 +1 + 새 문제 교체)
-    runner.run_order = max_order
+        # 사이 주자(old_order < x ≤ new_order) 1칸씩 앞당김
+        between = Runner.query.filter(
+            Runner.group_id == runner.group_id,
+            Runner.run_order > old_order,
+            Runner.run_order <= new_order,
+        ).order_by(Runner.run_order).all()
+        for r in between:
+            r.run_order -= 1
+        runner.run_order = new_order
+
+        if was_active:
+            next_runner = Runner.query.filter_by(
+                group_id=runner.group_id, run_order=old_order,
+            ).first()
+            if next_runner and next_runner.status == 'waiting':
+                password = generate_password()
+                next_runner.password = password
+                next_runner.status = 'active'
+
+    # 공통: 본인 리셋 + 새 문제 교체 + 미루기 카운트
     runner.status = 'waiting'
     runner.password = ''
     runner.started_at = None
     runner.attempts = 0
     runner.deferred_count = (runner.deferred_count or 0) + 1
     runner.submitted_answer = None
+    runner.reason = reason or None
     swapped = _swap_with_spare_problem(runner)
-
-    # active였으면 다음 주자(당겨진 순서) 활성화
-    if was_active:
-        next_runner = Runner.query.filter_by(
-            group_id=runner.group_id,
-            run_order=old_order
-        ).first()
-        if next_runner and next_runner.status == 'waiting':
-            password = generate_password()
-            next_runner.password = password
-            next_runner.status = 'active'
 
     db.session.commit()
     if _is_ajax():
-        return jsonify({'ok': True, 'swapped': swapped})
+        return jsonify({'ok': True, 'swapped': swapped, 'new_order': new_order})
     msg_suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
-    flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째){msg_suffix}', 'info')
+    flash(f'{runner.name}을(를) {new_order}번째로 이동했습니다.{msg_suffix}', 'info')
     return redirect(url_for('admin_dashboard'))
 
 
@@ -785,13 +947,23 @@ def admin_partial_groups():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
     total_runners = sum(r['total'] for r in rankings)
+    defer_candidates = {}
+    for r in all_runners:
+        if r.status in ('waiting', 'active'):
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.run_order > r.run_order]
+            defer_candidates[r.id] = [
+                {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
+                for c in cands
+            ]
     return render_template('_admin_groups.html',
                            groups=groups,
                            grouped=grouped,
                            rankings=rankings,
                            total_completed=total_completed,
                            total_runners=total_runners,
-                           now_utc=datetime.utcnow())
+                           now_utc=datetime.utcnow(),
+                           defer_candidates=defer_candidates)
 
 
 @app.route('/admin/api/status')
