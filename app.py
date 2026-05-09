@@ -705,6 +705,17 @@ def admin_dashboard():
     reviews = Runner.query.filter(Runner.review.isnot(None))\
         .order_by(Runner.review_submitted_at.desc()).all()
 
+    # 미루기 모달용: 각 주자별 교환 후보 (같은 조 + 본인 뒤 + waiting)
+    defer_candidates = {}
+    for r in all_runners:
+        if r.status in ('waiting', 'active'):
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.run_order > r.run_order]
+            defer_candidates[r.id] = [
+                {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
+                for c in cands
+            ]
+
     return render_template('admin_dashboard.html',
                            groups=groups,
                            grouped=grouped,
@@ -720,7 +731,8 @@ def admin_dashboard():
                            spare_used=spare_used,
                            spare_remaining=spare_remaining,
                            reviews=reviews,
-                           now_utc=datetime.utcnow())
+                           now_utc=datetime.utcnow(),
+                           defer_candidates=defer_candidates)
 
 
 @app.route('/admin/skip/<int:runner_id>', methods=['POST'])
@@ -765,6 +777,11 @@ def admin_pass(runner_id):
 @app.route('/admin/defer/<int:runner_id>', methods=['POST'])
 @admin_required
 def admin_defer(runner_id):
+    """관리자 미루기. mode 파라미터:
+    - 'max'(기본): 조 맨 뒤로 (기존 동작)
+    - 'steps': steps 칸 뒤로
+    - 'swap':  target_order 의 waiting 주자와 1:1 교환
+    """
     runner = Runner.query.get_or_404(runner_id)
     if runner.status not in ('waiting', 'active'):
         flash('대기 중 또는 진행 중인 주자만 미룰 수 있습니다.', 'warning')
@@ -773,49 +790,90 @@ def admin_defer(runner_id):
     was_active = runner.status == 'active'
     old_order = runner.run_order
 
-    # 조의 마지막 run_order 조회
     max_order = db.session.query(db.func.max(Runner.run_order))\
         .filter_by(group_id=runner.group_id).scalar()
-
     if old_order == max_order:
         flash(f'{runner.name}은(는) 이미 마지막 주자입니다.', 'info')
         return redirect(url_for('admin_dashboard'))
 
-    # old_order보다 뒤에 있는 waiting 주자들의 순서를 1씩 당기기
-    later_runners = Runner.query.filter(
-        Runner.group_id == runner.group_id,
-        Runner.run_order > old_order
-    ).order_by(Runner.run_order).all()
+    mode = request.form.get('mode', 'max')
+    reason = request.form.get('reason', '').strip()[:200]
 
-    for r in later_runners:
-        r.run_order -= 1
+    # ---- swap 모드 ----
+    if mode == 'swap':
+        try:
+            target_order = int(request.form.get('target_order', 0))
+        except (TypeError, ValueError):
+            target_order = 0
+        target = Runner.query.filter_by(
+            group_id=runner.group_id, run_order=target_order, status='waiting',
+        ).first()
+        if not target or target.run_order <= old_order:
+            msg = '대상 주자가 유효하지 않습니다 (본인 뒤의 대기 주자만 가능).'
+            if _is_ajax():
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, 'warning')
+            return redirect(url_for('admin_dashboard'))
+        # 1:1 swap
+        runner.run_order = target.run_order
+        target.run_order = old_order
+        if was_active:
+            password = generate_password()
+            target.password = password
+            target.status = 'active'
+        new_order = runner.run_order
+    # ---- steps / max 모드 ----
+    else:
+        if mode == 'steps':
+            try:
+                steps = int(request.form.get('steps', 0))
+            except (TypeError, ValueError):
+                steps = 0
+            max_steps = max_order - old_order
+            if steps < 1 or steps > max_steps:
+                msg = f'이동 칸 수는 1~{max_steps} 범위여야 합니다.'
+                if _is_ajax():
+                    return jsonify({'ok': False, 'message': msg}), 400
+                flash(msg, 'warning')
+                return redirect(url_for('admin_dashboard'))
+            new_order = old_order + steps
+        else:  # 'max'
+            new_order = max_order
 
-    # 해당 주자를 맨 뒤로 (시작 시간 초기화 + 미루기 카운트 +1 + 새 문제 교체)
-    runner.run_order = max_order
+        # 사이 주자(old_order < x ≤ new_order) 1칸씩 앞당김
+        between = Runner.query.filter(
+            Runner.group_id == runner.group_id,
+            Runner.run_order > old_order,
+            Runner.run_order <= new_order,
+        ).order_by(Runner.run_order).all()
+        for r in between:
+            r.run_order -= 1
+        runner.run_order = new_order
+
+        if was_active:
+            next_runner = Runner.query.filter_by(
+                group_id=runner.group_id, run_order=old_order,
+            ).first()
+            if next_runner and next_runner.status == 'waiting':
+                password = generate_password()
+                next_runner.password = password
+                next_runner.status = 'active'
+
+    # 공통: 본인 리셋 + 새 문제 교체 + 미루기 카운트
     runner.status = 'waiting'
     runner.password = ''
     runner.started_at = None
     runner.attempts = 0
     runner.deferred_count = (runner.deferred_count or 0) + 1
     runner.submitted_answer = None
+    runner.reason = reason or None
     swapped = _swap_with_spare_problem(runner)
-
-    # active였으면 다음 주자(당겨진 순서) 활성화
-    if was_active:
-        next_runner = Runner.query.filter_by(
-            group_id=runner.group_id,
-            run_order=old_order
-        ).first()
-        if next_runner and next_runner.status == 'waiting':
-            password = generate_password()
-            next_runner.password = password
-            next_runner.status = 'active'
 
     db.session.commit()
     if _is_ajax():
-        return jsonify({'ok': True, 'swapped': swapped})
+        return jsonify({'ok': True, 'swapped': swapped, 'new_order': new_order})
     msg_suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
-    flash(f'{runner.name}을(를) 맨 뒤로 미뤘습니다. (새 순서: {max_order}번째){msg_suffix}', 'info')
+    flash(f'{runner.name}을(를) {new_order}번째로 이동했습니다.{msg_suffix}', 'info')
     return redirect(url_for('admin_dashboard'))
 
 
@@ -863,13 +921,23 @@ def admin_partial_groups():
     rankings = get_group_rankings()
     total_completed = sum(r['completed'] for r in rankings)
     total_runners = sum(r['total'] for r in rankings)
+    defer_candidates = {}
+    for r in all_runners:
+        if r.status in ('waiting', 'active'):
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.run_order > r.run_order]
+            defer_candidates[r.id] = [
+                {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
+                for c in cands
+            ]
     return render_template('_admin_groups.html',
                            groups=groups,
                            grouped=grouped,
                            rankings=rankings,
                            total_completed=total_completed,
                            total_runners=total_runners,
-                           now_utc=datetime.utcnow())
+                           now_utc=datetime.utcnow(),
+                           defer_candidates=defer_candidates)
 
 
 @app.route('/admin/api/status')
