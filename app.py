@@ -539,6 +539,18 @@ def guide():
     return render_template('guide.html')
 
 
+@app.route('/roster')
+@challenge_open_required
+def roster():
+    """조별 주자 명단 공개 페이지. 비번/정답/후기 등 민감 정보는 제외."""
+    groups = Group.query.order_by(Group.id).all()
+    grouped = {g.id: [] for g in groups}
+    runners = Runner.query.order_by(Runner.group_id, Runner.run_order).all()
+    for r in runners:
+        grouped[r.group_id].append(r)
+    return render_template('roster.html', groups=groups, grouped=grouped)
+
+
 @app.route('/download/challenge_data')
 @challenge_open_required
 def download_challenge_data():
