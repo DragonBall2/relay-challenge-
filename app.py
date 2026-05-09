@@ -390,7 +390,10 @@ def submit():
 @app.route('/defer', methods=['POST'])
 @login_required
 def defer():
-    """주자 본인이 자기 차례를 조 맨 뒤로 미룸."""
+    """주자 본인이 자기 차례를 N칸 뒤로 이동.
+    steps=N: 본인이 X번 주자라면 (X+N)번 자리로 이동. 사이 주자 N명은 1칸씩 앞당겨짐.
+    N == max_steps(=max_order - X)면 맨 뒤로 미루는 효과.
+    """
     runner = db.session.get(Runner, session['runner_id'])
     if not runner or runner.status != 'active':
         flash('현재 진행 중인 주자만 미룰 수 있습니다.', 'warning')
@@ -399,21 +402,33 @@ def defer():
     old_order = runner.run_order
     max_order = db.session.query(db.func.max(Runner.run_order))\
         .filter_by(group_id=runner.group_id).scalar()
+    max_steps = max_order - old_order
 
-    if old_order == max_order:
+    if max_steps < 1:
         flash('이미 마지막 주자라 더 미룰 수 없습니다.', 'info')
         return redirect(url_for('challenge'))
 
-    # 뒤에 있는 주자들을 1씩 당김
-    later_runners = Runner.query.filter(
+    try:
+        steps = int(request.form.get('steps', 0))
+    except (TypeError, ValueError):
+        steps = 0
+    if steps < 1 or steps > max_steps:
+        flash(f'이동 칸 수는 1~{max_steps} 범위여야 합니다.', 'warning')
+        return redirect(url_for('challenge'))
+
+    new_order = old_order + steps
+
+    # 사이 주자(old_order < x ≤ new_order)들은 1씩 앞당김
+    between_runners = Runner.query.filter(
         Runner.group_id == runner.group_id,
-        Runner.run_order > old_order
+        Runner.run_order > old_order,
+        Runner.run_order <= new_order,
     ).order_by(Runner.run_order).all()
-    for r in later_runners:
+    for r in between_runners:
         r.run_order -= 1
 
     reason = request.form.get('reason', '').strip()[:200]
-    runner.run_order = max_order
+    runner.run_order = new_order
     runner.status = 'waiting'
     runner.password = ''
     runner.started_at = None
@@ -425,10 +440,10 @@ def defer():
     # 새 문제로 교체 (스페어 풀에서 1건). 풀 비어있으면 동일 문제 유지.
     swapped = _swap_with_spare_problem(runner)
 
-    # 당겨진 순서에 있는 waiting 주자 활성화
+    # 당겨진 순서(old_order)의 waiting 주자 활성화
     next_runner = Runner.query.filter_by(
         group_id=runner.group_id,
-        run_order=old_order
+        run_order=old_order,
     ).first()
     if next_runner and next_runner.status == 'waiting':
         password = generate_password()
@@ -437,10 +452,8 @@ def defer():
 
     db.session.commit()
     session.pop('runner_id', None)
-    if swapped:
-        flash('차례를 맨 뒤로 미뤘습니다. 다음 차례에는 새 문제가 출제됩니다.', 'info')
-    else:
-        flash('차례를 맨 뒤로 미뤘습니다. (스페어 풀 부족: 동일 문제 유지)', 'warning')
+    suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+    flash(f'{steps}칸 뒤로 이동했습니다. 차례가 다시 돌아오면 새 문제가 출제됩니다.{suffix}', 'info')
     return redirect(url_for('index'))
 
 
