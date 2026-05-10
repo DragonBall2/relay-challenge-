@@ -33,6 +33,10 @@
               title="미루기 1회당 개인 랭킹에 더해지는 패널티">
             미루기 패널티: {{ defer_penalty_seconds }}초
         </span>
+        <span class="badge bg-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.75rem;"
+              title="데이터셋 시드 — 같은 시드면 동일 데이터·답">
+            시드: {{ seed }}
+        </span>
         {% endif %}
     </div>
     <div>
@@ -144,6 +148,50 @@
   </div>
 </div>
 
+<!-- 미루기/교환 모달 -->
+<div class="modal fade" id="deferModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background: var(--card-bg, #fff); color: var(--text-primary, #000);">
+      <div class="modal-header">
+        <h5 class="modal-title">미루기 / 순서 변경 — <span id="deferModalName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+          현재 순서: <strong id="deferModalCurrent"></strong>번
+          · 본인 뒤 대기 주자: <strong id="deferModalCount"></strong>명
+        </p>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="deferModalMode" id="deferModeMax" value="max" checked>
+          <label class="form-check-label" for="deferModeMax">조 맨 뒤로</label>
+        </div>
+        <div class="form-check mb-2 d-flex align-items-center gap-2">
+          <input class="form-check-input" type="radio" name="deferModalMode" id="deferModeSteps" value="steps">
+          <label class="form-check-label" for="deferModeSteps" style="margin-right: 0.5rem;">N칸 뒤로</label>
+          <input type="number" id="deferStepsInput" class="form-control form-control-sm"
+                 style="width: 90px;" min="1" max="1" value="1" disabled>
+          <span id="deferStepsHint" style="font-size: 0.8rem; color: var(--text-secondary);"></span>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="radio" name="deferModalMode" id="deferModeSwap" value="swap">
+          <label class="form-check-label" for="deferModeSwap" style="margin-right: 0.5rem;">특정 주자와 교환</label>
+          <select id="deferSwapSelect" class="form-select form-select-sm mt-1" style="max-width: 320px;" disabled>
+            <option value="">주자 선택...</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size: 0.85rem;">사유 (선택, 최대 100자)</label>
+          <input type="text" id="deferModalReason" class="form-control form-control-sm" maxlength="100">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+        <button type="button" class="btn btn-primary" id="deferModalConfirm">실행</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Reason 입력 모달 -->
 <div class="modal fade" id="reasonModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
@@ -227,6 +275,110 @@
         modal.hide();
         pendingUrl = null;
         if (url) postAction(url, reason);
+    });
+
+    // ---------- 미루기/교환 모달 ----------
+    const deferModalEl = document.getElementById('deferModal');
+    const deferModal = new bootstrap.Modal(deferModalEl);
+    let deferTargetRunnerId = null;
+
+    const dRadioMax = document.getElementById('deferModeMax');
+    const dRadioSteps = document.getElementById('deferModeSteps');
+    const dRadioSwap = document.getElementById('deferModeSwap');
+    const dStepsInput = document.getElementById('deferStepsInput');
+    const dStepsHint = document.getElementById('deferStepsHint');
+    const dSwapSelect = document.getElementById('deferSwapSelect');
+    const dReason = document.getElementById('deferModalReason');
+
+    function syncDeferModeInputs() {
+        const mode = document.querySelector('input[name="deferModalMode"]:checked').value;
+        dStepsInput.disabled = mode !== 'steps';
+        dSwapSelect.disabled = mode !== 'swap';
+    }
+    [dRadioMax, dRadioSteps, dRadioSwap].forEach(r => r.addEventListener('change', syncDeferModeInputs));
+
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.js-defer');
+        if (!btn) return;
+        ev.preventDefault();
+        deferTargetRunnerId = btn.dataset.runnerId;
+        const name = btn.dataset.runnerName || '';
+        const currentOrder = parseInt(btn.dataset.currentOrder, 10);
+        let candidates = [];
+        try { candidates = JSON.parse(btn.dataset.candidates || '[]'); } catch (e) { candidates = []; }
+
+        document.getElementById('deferModalName').textContent = name;
+        document.getElementById('deferModalCurrent').textContent = currentOrder;
+        document.getElementById('deferModalCount').textContent = candidates.length;
+
+        const maxSteps = candidates.length;
+        dStepsInput.max = Math.max(1, maxSteps);
+        dStepsInput.value = 1;
+        dStepsHint.textContent = '(1 ~ ' + maxSteps + ')';
+
+        dSwapSelect.innerHTML = '<option value="">주자 선택...</option>';
+        for (const c of candidates) {
+            const opt = document.createElement('option');
+            opt.value = c.order;
+            opt.textContent = c.order + '번 · ' + c.name + ' (' + c.knox_id + ')';
+            dSwapSelect.appendChild(opt);
+        }
+
+        dRadioMax.checked = true;
+        syncDeferModeInputs();
+        dReason.value = '';
+        if (maxSteps === 0) {
+            alert('이미 마지막 주자입니다.');
+            return;
+        }
+        deferModal.show();
+    });
+
+    document.getElementById('deferModalConfirm').addEventListener('click', async () => {
+        if (!deferTargetRunnerId) return;
+        const mode = document.querySelector('input[name="deferModalMode"]:checked').value;
+        const body = new URLSearchParams();
+        body.append('mode', mode);
+        body.append('reason', dReason.value.trim());
+        if (mode === 'steps') {
+            const s = parseInt(dStepsInput.value, 10);
+            const max = parseInt(dStepsInput.max, 10);
+            if (!s || s < 1 || s > max) {
+                alert('이동 칸 수는 1~' + max + ' 사이로 입력하세요.');
+                return;
+            }
+            body.append('steps', s);
+        } else if (mode === 'swap') {
+            if (!dSwapSelect.value) {
+                alert('교환할 주자를 선택하세요.');
+                return;
+            }
+            body.append('target_order', dSwapSelect.value);
+        }
+
+        const url = '/admin/defer/' + deferTargetRunnerId;
+        deferModal.hide();
+        actionInFlight = true;
+        statusEl.textContent = '처리 중...';
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json',
+                },
+                body: body.toString(),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || ('HTTP ' + res.status));
+        } catch (e) {
+            alert('실패: ' + e.message);
+        } finally {
+            actionInFlight = false;
+            await refreshPartial();
+        }
     });
 
     // 버튼 이벤트 위임 (partial이 바뀌어도 작동)

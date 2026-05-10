@@ -72,17 +72,40 @@
         <!-- 미루기 -->
         <div class="card mt-4">
             <div class="card-body py-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div style="font-size: 0.9rem; color: var(--text-secondary);">
-                        막혔거나 당장 풀기 어렵다면 내 차례를 조 맨 뒤로 미룰 수 있습니다.
-                        (다음 주자에게 먼저 기회가 넘어가고, 나중에 다시 시도 가능)
-                    </div>
+                <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                    막혔거나 당장 풀기 어렵다면 본인 차례를 미룰 수 있습니다.
+                    미룰 때마다 새 문제로 교체되며 차례가 다시 돌아오면 재로그인 해야 합니다.<br>
+                    <span style="color: var(--accent-yellow);">※ 특정 주자와 순서 교환은 해당 주자와 사전에 협의 후 진행하세요.</span>
+                </div>
+                {% if swap_candidates %}
+                <div class="d-flex flex-wrap gap-3 align-items-start">
                     <form method="POST" action="{{ url_for('defer') }}"
-                          onsubmit="return deferConfirm(event);" class="d-inline">
+                          onsubmit="return deferConfirm(event);" class="d-flex flex-wrap gap-2 align-items-center">
                         <input type="hidden" name="reason" id="deferReasonField" value="">
-                        <button type="submit" class="btn btn-outline-primary btn-sm">내 차례 뒤로 미루기</button>
+                        <input type="number" name="steps" min="1" max="{{ swap_candidates|length }}"
+                               value="1" class="form-control form-control-sm" style="max-width: 80px;" required>
+                        <button type="submit" class="btn btn-outline-primary btn-sm">
+                            칸 뒤로 이동 (최대 {{ swap_candidates|length }})
+                        </button>
+                    </form>
+
+                    <form method="POST" action="{{ url_for('defer_swap') }}"
+                          onsubmit="return swapConfirm(event);" class="d-flex flex-wrap gap-2 align-items-center">
+                        <input type="hidden" name="reason" id="swapReasonField" value="">
+                        <select name="target_order" class="form-select form-select-sm" style="max-width: 280px;" required>
+                            <option value="">특정 주자와 순서 교환...</option>
+                            {% for c in swap_candidates %}
+                            <option value="{{ c.run_order }}">{{ c.run_order }}번 · {{ c.name }} ({{ c.knox_id }})</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-outline-primary btn-sm">교환</button>
                     </form>
                 </div>
+                {% else %}
+                <div style="color: var(--text-secondary); font-size: 0.85rem;">
+                    조 마지막 주자라 더 이상 미룰 수 없습니다.
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -92,7 +115,19 @@
 {% block scripts %}
 <script>
 function deferConfirm(ev) {
-    if (!confirm('정말 본인의 차례를 조의 맨 뒤로 미루시겠습니까?\n로그아웃되며, 차례가 다시 돌아오면 재로그인 해야 합니다.')) {
+    const form = ev.target;
+    const stepsInput = form.querySelector('input[name="steps"]');
+    const steps = parseInt(stepsInput.value, 10);
+    const max = parseInt(stepsInput.max, 10);
+    if (!steps || steps < 1 || steps > max) {
+        alert('이동 칸 수를 1~' + max + ' 사이로 입력하세요.');
+        ev.preventDefault();
+        return false;
+    }
+    const msg = (steps === max ? '맨 뒤로 이동' : steps + '칸 뒤로 이동') +
+        '하시겠습니까?\n다음 주자에게 전달할 비밀번호가 표시됩니다. ' +
+        '차례가 다시 돌아오면 재로그인 해야 합니다.';
+    if (!confirm(msg)) {
         ev.preventDefault();
         return false;
     }
@@ -102,6 +137,29 @@ function deferConfirm(ev) {
         return false;
     }
     document.getElementById('deferReasonField').value = (reason || '').slice(0, 100);
+    return true;
+}
+
+function swapConfirm(ev) {
+    const form = ev.target;
+    const sel = form.querySelector('select[name="target_order"]');
+    if (!sel.value) {
+        alert('교환할 주자를 선택하세요.');
+        ev.preventDefault();
+        return false;
+    }
+    const text = sel.options[sel.selectedIndex].text;
+    if (!confirm('정말 ' + text + ' 와(과) 순서를 교환하시겠습니까?\n' +
+        '다음 주자에게 전달할 비밀번호가 표시됩니다. 차례가 다시 돌아오면 재로그인 해야 합니다.')) {
+        ev.preventDefault();
+        return false;
+    }
+    const reason = prompt('사유를 간단히 적어주세요 (선택, 최대 100자):', '');
+    if (reason === null) {
+        ev.preventDefault();
+        return false;
+    }
+    document.getElementById('swapReasonField').value = (reason || '').slice(0, 100);
     return true;
 }
 </script>

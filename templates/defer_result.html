@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}순서 변경 완료{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+
+        <!-- 결과 메시지 -->
+        <div class="text-center mb-4">
+            <div style="font-size: 3rem;">↪️</div>
+            <h2 style="font-weight: 800; margin-top: 1rem;">순서가 변경되었습니다</h2>
+            <p style="color: var(--text-secondary);">
+                {{ runner.name }} ({{ runner.group.name }}) — 새 순서: {{ runner.run_order }}번
+            </p>
+            <p style="color: var(--accent-yellow); font-size: 0.9rem; margin-top: 0.5rem;">
+                차례가 다시 돌아오면 <strong>새 문제</strong>가 출제됩니다.
+            </p>
+        </div>
+
+        {% if new_active %}
+        <!-- 다음 주자 정보 -->
+        <div class="card mb-4">
+            <div class="card-header py-3 text-center">
+                <h5 class="mb-0" style="font-weight: 700;">새로 활성화된 주자에게 비밀번호를 전달하세요</h5>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-3">
+                    <p style="color: var(--text-secondary); margin-bottom: 0.3rem;">다음 주자</p>
+                    <p style="font-size: 1.3rem; font-weight: 700;">
+                        {{ new_active.name }}
+                    </p>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">
+                        Knox ID: <strong style="color: var(--text-primary);">{{ new_active.knox_id }}</strong>
+                    </p>
+                    <p style="color: var(--text-secondary); font-size: 0.85rem;">
+                        {{ runner.group.name }} · {{ new_active.run_order }}번째 주자
+                    </p>
+                </div>
+
+                <div class="password-display">
+                    <p style="color: var(--text-secondary); margin-bottom: 0.5rem; font-size: 0.9rem;">
+                        다음 주자의 접속 비밀번호
+                    </p>
+                    <div class="password-value" id="next-password">{{ next_password }}</div>
+                    <button class="btn btn-outline-success btn-sm mt-3" onclick="copyPassword()">
+                        비밀번호 복사
+                    </button>
+                </div>
+
+                <div class="mt-4 p-3" style="background: rgba(255,255,255,0.03); border-radius: 12px;">
+                    <h6 style="font-weight: 700; color: var(--accent-yellow);">다음 단계</h6>
+                    <ol style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0;">
+                        <li>다음 주자 <strong>{{ new_active.name }}</strong>에게 연락</li>
+                        <li>위 <strong>Knox ID</strong>와 <strong>접속 비밀번호</strong>를 전달</li>
+                        <li>다음 주자가 사이트에 접속하여 문제를 풀 수 있도록 안내</li>
+                    </ol>
+                </div>
+
+                <div class="mt-3 p-3" style="background: rgba(65,105,225,0.08); border: 1px solid rgba(65,105,225,0.3); border-radius: 12px;">
+                    <h6 style="font-weight: 700; color: var(--samsung-blue-light); margin-bottom: 0.4rem;">💡 비밀번호 안내</h6>
+                    <ul style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0; padding-left: 1.2rem;">
+                        <li>위 비밀번호는 <strong>{{ new_active.name }}님</strong>께만 전달해 주세요.</li>
+                        <li>본인 차례가 다시 돌아오면 그때 새 비밀번호를 받아 재로그인하면 됩니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="card mb-4">
+            <div class="card-body text-center" style="color: var(--text-secondary);">
+                활성화된 다음 주자가 없습니다.
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="text-center">
+            <a href="{{ url_for('logout') }}" class="btn btn-samsung">로그아웃</a>
+            <a href="{{ url_for('leaderboard') }}" class="btn btn-outline-secondary ms-2">리더보드 보기</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyPassword() {
+    const pw = document.getElementById('next-password').textContent.trim();
+    navigator.clipboard.writeText(pw).then(() => {
+        const btn = event.target;
+        btn.textContent = '복사 완료!';
+        setTimeout(() => btn.textContent = '비밀번호 복사', 2000);
+    });
+}
+</script>
+{% endblock %}
