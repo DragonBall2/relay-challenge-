@@ -32,6 +32,8 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute('PRAGMA journal_mode=WAL')
         cursor.execute('PRAGMA synchronous=NORMAL')
+        # 동시 쓰기 충돌 시 5초까지 자동 재시도 ("database is locked" 예외 방지)
+        cursor.execute('PRAGMA busy_timeout=5000')
         cursor.close()
 
 
