@@ -126,7 +126,7 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center py-3">
                 <h5 class="mb-0" style="font-weight: 700;">조별 진행현황</h5>
-                <span style="color: var(--text-secondary); font-size: 0.8rem;" id="refresh-timer">10초마다 갱신</span>
+                <span style="color: var(--text-secondary); font-size: 0.8rem;" id="refresh-timer">15초마다 갱신</span>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -185,7 +185,7 @@
 
 {% block scripts %}
 <script>
-// 10초마다 리더보드 갱신
+// 15초마다 리더보드 갱신
 setInterval(() => {
     fetch('{{ url_for("api_leaderboard") }}')
         .then(r => r.json())
@@ -212,6 +212,6 @@ setInterval(() => {
             });
             tbody.innerHTML = html;
         }).catch(() => {});
-}, 10000);
+}, 15000);  // 15초 (서버 부하 완화)
 </script>
 {% endblock %}

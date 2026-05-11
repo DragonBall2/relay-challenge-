@@ -114,12 +114,17 @@ WAL 모드 활성화 후 디렉토리에 다음 파일이 생깁니다 (정상):
 
 ### 단발 실행 (테스트용)
 ```bash
-waitress-serve --host=0.0.0.0 --port=8080 --threads=8 app:app
+waitress-serve --host=0.0.0.0 --port=8080 --threads=8 --connection-limit=200 --channel-timeout=60 app:app
 ```
+
+**옵션 설명**:
+- `--threads=8`: 동시 요청 처리 스레드 (1코어 환경에서 8~12 적정)
+- `--connection-limit=200`: 동시 TCP 연결 허용 수 (기본 100, 130~500명 운영 시 200 권장)
+- `--channel-timeout=60`: 유휴 연결 타임아웃 (초)
 
 ### 백그라운드 실행 (nohup)
 ```bash
-nohup waitress-serve --host=0.0.0.0 --port=8080 --threads=8 app:app \
+nohup waitress-serve --host=0.0.0.0 --port=8080 --threads=8 --connection-limit=200 --channel-timeout=60 app:app \
   > waitress.log 2>&1 &
 
 echo $! > waitress.pid
@@ -143,7 +148,7 @@ Type=simple
 User=YOUR_USER
 WorkingDirectory=/path/to/relay-challenge
 Environment="PATH=/path/to/relay-challenge/venv/bin"
-ExecStart=/path/to/relay-challenge/venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=8 app:app
+ExecStart=/path/to/relay-challenge/venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=8 --connection-limit=200 --channel-timeout=60 app:app
 Restart=on-failure
 RestartSec=5
 MemoryMax=1.5G
