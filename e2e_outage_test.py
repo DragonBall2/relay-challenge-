@@ -385,17 +385,21 @@ def test_double_active():
 
         r = c.post(f'/admin/reset/{r1_id}',
                    headers={'X-Requested-With': 'XMLHttpRequest'})
+        rj = r.get_json()
+        check(r.status_code == 409 and rj.get('error_code') == 'NEXT_RUNNER_STARTED',
+              f'C-2 이중 active 방지: 리셋 거부 (409 NEXT_RUNNER_STARTED)')
         with app.app_context():
             actives = Runner.query.filter_by(group_id=1, status='active').count()
-        check(actives == 2, f'C-2 이중 active 발생 (실제 active 수: {actives})')
+        check(actives == 1, f'C-2 active 그대로 1명 (실제: {actives})')
 
-        # ----- C-3: 이중 active 해소 — 한 명을 뒤로 보냄 -----
-        r = c.post(f'/admin/defer/{r1_id}',
-                   data={'mode': 'max', 'reason': 'C-3'},
+        # ----- C-3: 다음 주자 먼저 처리 후 리셋 가능 -----
+        c.post(f'/admin/defer/{r2_id}', data={'mode': 'max'},
+               headers={'X-Requested-With': 'XMLHttpRequest'})
+        r = c.post(f'/admin/reset/{r1_id}',
                    headers={'X-Requested-With': 'XMLHttpRequest'})
         with app.app_context():
             actives = Runner.query.filter_by(group_id=1, status='active').count()
-        check(actives == 1, f'C-3 한 명 뒤로 보내면 단일 active (실제: {actives})')
+        check(actives == 1, f'C-3 next defer 후 reset OK (단일 active: {actives})')
 
 
 # ============================================================

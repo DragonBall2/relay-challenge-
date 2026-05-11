@@ -1013,6 +1013,13 @@ def admin_defer(runner_id):
     mode = request.form.get('mode', 'max')
     reason = request.form.get('reason', '').strip()[:200]
 
+    if mode not in ('max', 'steps', 'swap', 'reorder_swap'):
+        msg = f'알 수 없는 mode: {mode}'
+        if _is_ajax():
+            return jsonify({'ok': False, 'message': msg}), 400
+        flash(msg, 'warning')
+        return redirect(url_for('admin_dashboard'))
+
     # ---- reorder_swap 모드: 대기 주자 간 양방향 순서 교환 (패널티/문제 교체 없음) ----
     if mode == 'reorder_swap':
         if runner.status != 'waiting':
@@ -1167,9 +1174,20 @@ def admin_reset(runner_id):
         group_id=runner.group_id,
         run_order=runner.run_order + 1
     ).first()
-    if next_runner and next_runner.status == 'active' and not next_runner.started_at:
-        next_runner.status = 'waiting'
-        next_runner.password = ''
+    if next_runner and next_runner.status == 'active':
+        if not next_runner.started_at:
+            # 다음 주자가 아직 시작 안 함 → 되돌릴 수 있음
+            next_runner.status = 'waiting'
+            next_runner.password = ''
+        else:
+            # 다음 주자가 이미 시작했음 → 이중 active 생성 방지를 위해 리셋 거부
+            msg = (f'{next_runner.name}님이 이미 시작했습니다. '
+                   f'먼저 그분을 처리(완료/뒤로/리셋) 후 리셋하세요.')
+            if _is_ajax():
+                return jsonify({'ok': False, 'message': msg,
+                                'error_code': 'NEXT_RUNNER_STARTED'}), 409
+            flash(msg, 'warning')
+            return redirect(url_for('admin_dashboard'))
 
     runner.status = 'active'
     runner.completed_at = None
@@ -1682,6 +1700,18 @@ def _activate_next_runner(current_runner):
     defer로 미뤄진 주자도 run_order가 맨 뒤로 갔기 때문에 자동으로 이어짐.
     조 완주는 조 내 모든 주자가 종료 상태(completed/passed/skipped)일 때만 확정.
     """
+    # 이중 active 방지: 같은 조에 다른 active 주자가 이미 있으면 추가 활성화 안 함
+    existing_active = Runner.query.filter(
+        Runner.group_id == current_runner.group_id,
+        Runner.status == 'active',
+        Runner.id != current_runner.id,
+    ).first()
+    if existing_active:
+        _log_event('WARNING', 'activate_skipped_already_active',
+                   current_runner_id=current_runner.id,
+                   existing_active_id=existing_active.id,
+                   group=current_runner.group_id)
+        return
     next_runner = Runner.query.filter_by(
         group_id=current_runner.group_id,
         run_order=current_runner.run_order + 1
