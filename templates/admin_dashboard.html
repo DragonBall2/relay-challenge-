@@ -321,7 +321,7 @@
         // status별 옵션 노출/숨김 — active는 3개, waiting은 swap만
         const isActive = (status === 'active');
         document.getElementById('deferModeMax').parentElement.style.display = isActive ? '' : 'none';
-        document.getElementById('deferModeSteps').parentElement.parentElement.style.display = isActive ? '' : 'none';
+        document.getElementById('deferModeSteps').parentElement.style.display = isActive ? '' : 'none';
         document.getElementById('deferTitleSuffix').textContent = isActive ? '미루기 / 순서 변경' : '대기 주자 순서 변경';
         document.getElementById('deferActiveNote').style.display = isActive ? '' : 'none';
         document.getElementById('deferWaitingNote').style.display = isActive ? 'none' : '';
