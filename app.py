@@ -1018,17 +1018,21 @@ def admin_defer(runner_id):
 def admin_reset(runner_id):
     runner = Runner.query.get_or_404(runner_id)
 
-    # ---- active 주자: 진행 상태 초기화 (시간 초기화, 위치 유지) ----
-    # started_at=None 으로 두어 주자가 재로그인하는 시점부터 시계가 다시 시작되도록 함
+    # ---- active 주자: 진행 상태 초기화 (시간 초기화, 위치 유지, 새 문제로 교체) ----
+    # started_at=None 으로 두어 주자가 재로그인하는 시점부터 시계가 다시 시작
+    # 새 문제로 교체해 다운타임 동안의 사전 풀이/공유 영향도 차단
+    # deferred_count는 증가시키지 않음 (운영자 사유로 인한 리셋이므로 패널티 X)
     if runner.status == 'active':
         runner.attempts = 0
         runner.submitted_answer = None
         runner.reason = None
         runner.started_at = None
+        swapped = _swap_with_spare_problem(runner)
         db.session.commit()
         if _is_ajax():
-            return jsonify({'ok': True, 'kind': 'active_reset'})
-        flash(f'{runner.name} 진행 상태 초기화 (재로그인 시점부터 시간 카운트 시작)', 'info')
+            return jsonify({'ok': True, 'kind': 'active_reset', 'problem_swapped': swapped})
+        suffix = ' + 새 문제 출제' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
+        flash(f'{runner.name} 진행 상태 초기화{suffix}. 재로그인 시점부터 시간 카운트 시작.', 'info')
         return redirect(url_for('admin_dashboard'))
 
     # ---- 종료 상태 주자: active로 복원 (기존 동작) ----
