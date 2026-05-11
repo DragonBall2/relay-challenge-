@@ -140,10 +140,11 @@
                                     data-label="건너뛰기" data-runner-name="{{ runner.name }}"
                                     data-reason-required="1">건너뛰기</button>
                             {% endif %}
-                            {% if runner.status in ('completed', 'passed', 'skipped') %}
+                            {% if runner.status in ('active', 'completed', 'passed', 'skipped') %}
                             <button class="btn btn-outline-danger btn-sm js-action"
                                     data-action="{{ url_for('admin_reset', runner_id=runner.id) }}"
-                                    data-label="리셋" data-runner-name="{{ runner.name }}">리셋</button>
+                                    data-label="{% if runner.status == 'active' %}진행 초기화{% else %}리셋{% endif %}"
+                                    data-runner-name="{{ runner.name }}">{% if runner.status == 'active' %}진행 초기화{% else %}리셋{% endif %}</button>
                             {% endif %}
                         </td>
                     </tr>

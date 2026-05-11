@@ -969,6 +969,25 @@ def admin_defer(runner_id):
 def admin_reset(runner_id):
     runner = Runner.query.get_or_404(runner_id)
 
+    # ---- active 주자: 진행 상태 초기화 (시간만 재설정, 위치 유지) ----
+    if runner.status == 'active':
+        runner.attempts = 0
+        runner.submitted_answer = None
+        runner.reason = None
+        runner.started_at = datetime.utcnow()  # 시작 시각 재설정 → 개인 경과시간 새로 시작
+        db.session.commit()
+        if _is_ajax():
+            return jsonify({'ok': True, 'kind': 'active_reset'})
+        flash(f'{runner.name} 진행 상태 초기화 (시작 시각 재설정)', 'info')
+        return redirect(url_for('admin_dashboard'))
+
+    # ---- 종료 상태 주자: active로 복원 (기존 동작) ----
+    if runner.status not in ('completed', 'passed', 'skipped'):
+        if _is_ajax():
+            return jsonify({'ok': False, 'message': '리셋 가능한 상태가 아닙니다.'}), 400
+        flash('리셋 가능한 상태가 아닙니다.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
     # 다음 주자가 이미 활성화되어 있으면 되돌리기
     next_runner = Runner.query.filter_by(
         group_id=runner.group_id,
@@ -986,7 +1005,7 @@ def admin_reset(runner_id):
     runner.reason = None
 
     # 조 완료 상태도 리셋
-    group = db.session.get(Group,runner.group_id)
+    group = db.session.get(Group, runner.group_id)
     if group.finished_at:
         group.finished_at = None
 
