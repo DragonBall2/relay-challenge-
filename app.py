@@ -12,8 +12,23 @@ from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, send_file, jsonify, abort, make_response)
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from models import db, Group, Runner, AttemptLog, SpareProblem
 import config
+
+
+# ============================================================
+# SQLite WAL 모드 — 동시 읽기 락 충돌 완화 (소형 서버 운영용)
+# ============================================================
+@event.listens_for(Engine, 'connect')
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    import sqlite3
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL')
+        cursor.execute('PRAGMA synchronous=NORMAL')
+        cursor.close()
 
 
 # ============================================================
