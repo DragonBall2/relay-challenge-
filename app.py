@@ -731,12 +731,20 @@ def admin_dashboard():
     reviews = Runner.query.filter(Runner.review.isnot(None))\
         .order_by(Runner.review_submitted_at.desc()).all()
 
-    # 미루기 모달용: 각 주자별 교환 후보 (같은 조 + 본인 뒤 + waiting)
+    # 미루기/순서변경 모달용: 각 주자별 후보
+    # - active: 같은 조 + 본인 뒤 + waiting (뒤로 한정)
+    # - waiting: 같은 조 + 자신 외 모든 waiting (양방향)
     defer_candidates = {}
     for r in all_runners:
-        if r.status in ('waiting', 'active'):
+        if r.status == 'active':
             cands = [c for c in grouped[r.group_id]
                      if c.status == 'waiting' and c.run_order > r.run_order]
+        elif r.status == 'waiting':
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.id != r.id]
+        else:
+            cands = []
+        if r.status in ('waiting', 'active'):
             defer_candidates[r.id] = [
                 {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
                 for c in cands
@@ -825,7 +833,37 @@ def admin_defer(runner_id):
     mode = request.form.get('mode', 'max')
     reason = request.form.get('reason', '').strip()[:200]
 
-    # ---- swap 모드 ----
+    # ---- reorder_swap 모드: 대기 주자 간 양방향 순서 교환 (패널티/문제 교체 없음) ----
+    if mode == 'reorder_swap':
+        if runner.status != 'waiting':
+            msg = '대기 중 주자만 reorder_swap 가능 (active 주자는 swap 사용).'
+            if _is_ajax():
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, 'warning')
+            return redirect(url_for('admin_dashboard'))
+        try:
+            target_order = int(request.form.get('target_order', 0))
+        except (TypeError, ValueError):
+            target_order = 0
+        target = Runner.query.filter_by(
+            group_id=runner.group_id, run_order=target_order, status='waiting',
+        ).first()
+        if not target or target.id == runner.id:
+            msg = '교환 대상은 같은 조의 다른 대기 주자여야 합니다.'
+            if _is_ajax():
+                return jsonify({'ok': False, 'message': msg}), 400
+            flash(msg, 'warning')
+            return redirect(url_for('admin_dashboard'))
+        # 순서만 swap — 상태·문제·시작시각·deferred_count 모두 그대로
+        runner.run_order, target.run_order = target.run_order, runner.run_order
+        runner.reason = reason or None
+        db.session.commit()
+        if _is_ajax():
+            return jsonify({'ok': True, 'reordered': True})
+        flash(f'{runner.name} ↔ {target.name} 순서 교환 완료', 'info')
+        return redirect(url_for('admin_dashboard'))
+
+    # ---- swap 모드 (active 주자, 뒤로 한정) ----
     if mode == 'swap':
         try:
             target_order = int(request.form.get('target_order', 0))
@@ -949,9 +987,15 @@ def admin_partial_groups():
     total_runners = sum(r['total'] for r in rankings)
     defer_candidates = {}
     for r in all_runners:
-        if r.status in ('waiting', 'active'):
+        if r.status == 'active':
             cands = [c for c in grouped[r.group_id]
                      if c.status == 'waiting' and c.run_order > r.run_order]
+        elif r.status == 'waiting':
+            cands = [c for c in grouped[r.group_id]
+                     if c.status == 'waiting' and c.id != r.id]
+        else:
+            cands = []
+        if r.status in ('waiting', 'active'):
             defer_candidates[r.id] = [
                 {'order': c.run_order, 'name': c.name, 'knox_id': c.knox_id}
                 for c in cands

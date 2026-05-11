@@ -153,13 +153,19 @@
   <div class="modal-dialog">
     <div class="modal-content" style="background: var(--card-bg, #fff); color: var(--text-primary, #000);">
       <div class="modal-header">
-        <h5 class="modal-title">미루기 / 순서 변경 — <span id="deferModalName"></span></h5>
+        <h5 class="modal-title"><span id="deferTitleSuffix">미루기 / 순서 변경</span> — <span id="deferModalName"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="닫기"></button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
           현재 순서: <strong id="deferModalCurrent"></strong>번
-          · 본인 뒤 대기 주자: <strong id="deferModalCount"></strong>명
+          · 교환 가능 주자: <strong id="deferModalCount"></strong>명
+        </p>
+        <p id="deferActiveNote" style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+          ※ active 주자 — 미루기 시 패널티(deferred_count++) + 새 문제 교체가 적용됩니다.
+        </p>
+        <p id="deferWaitingNote" style="font-size: 0.8rem; color: var(--accent-green); margin-bottom: 0.75rem; display: none;">
+          ※ 대기 주자 — 단순 순서 교환 (패널티/문제 교체 없음, 양방향 가능).
         </p>
         <div class="form-check mb-2">
           <input class="form-check-input" type="radio" name="deferModalMode" id="deferModeMax" value="max" checked>
@@ -303,6 +309,7 @@
         ev.preventDefault();
         deferTargetRunnerId = btn.dataset.runnerId;
         const name = btn.dataset.runnerName || '';
+        const status = btn.dataset.runnerStatus || 'active';
         const currentOrder = parseInt(btn.dataset.currentOrder, 10);
         let candidates = [];
         try { candidates = JSON.parse(btn.dataset.candidates || '[]'); } catch (e) { candidates = []; }
@@ -311,10 +318,25 @@
         document.getElementById('deferModalCurrent').textContent = currentOrder;
         document.getElementById('deferModalCount').textContent = candidates.length;
 
-        const maxSteps = candidates.length;
-        dStepsInput.max = Math.max(1, maxSteps);
-        dStepsInput.value = 1;
-        dStepsHint.textContent = '(1 ~ ' + maxSteps + ')';
+        // status별 옵션 노출/숨김 — active는 3개, waiting은 swap만
+        const isActive = (status === 'active');
+        document.getElementById('deferModeMax').parentElement.style.display = isActive ? '' : 'none';
+        document.getElementById('deferModeSteps').parentElement.parentElement.style.display = isActive ? '' : 'none';
+        document.getElementById('deferTitleSuffix').textContent = isActive ? '미루기 / 순서 변경' : '대기 주자 순서 변경';
+        document.getElementById('deferActiveNote').style.display = isActive ? '' : 'none';
+        document.getElementById('deferWaitingNote').style.display = isActive ? 'none' : '';
+
+        if (isActive) {
+            const maxSteps = candidates.length;
+            dStepsInput.max = Math.max(1, maxSteps);
+            dStepsInput.value = 1;
+            dStepsHint.textContent = '(1 ~ ' + maxSteps + ')';
+            dRadioMax.checked = true;
+        } else {
+            // waiting → swap 모드 강제
+            dRadioSwap.checked = true;
+        }
+        syncDeferModeInputs();
 
         dSwapSelect.innerHTML = '<option value="">주자 선택...</option>';
         for (const c of candidates) {
@@ -323,12 +345,12 @@
             opt.textContent = c.order + '번 · ' + c.name + ' (' + c.knox_id + ')';
             dSwapSelect.appendChild(opt);
         }
+        // waiting일 때는 swap 셀렉트 항상 enable
+        if (!isActive) dSwapSelect.disabled = false;
 
-        dRadioMax.checked = true;
-        syncDeferModeInputs();
         dReason.value = '';
-        if (maxSteps === 0) {
-            alert('이미 마지막 주자입니다.');
+        if (candidates.length === 0) {
+            alert(isActive ? '이미 마지막 주자입니다.' : '교환할 다른 대기 주자가 없습니다.');
             return;
         }
         deferModal.show();
@@ -336,7 +358,12 @@
 
     document.getElementById('deferModalConfirm').addEventListener('click', async () => {
         if (!deferTargetRunnerId) return;
-        const mode = document.querySelector('input[name="deferModalMode"]:checked').value;
+        const btn = document.querySelector(`.js-defer[data-runner-id="${deferTargetRunnerId}"]`);
+        const status = (btn && btn.dataset.runnerStatus) || 'active';
+        let mode = document.querySelector('input[name="deferModalMode"]:checked').value;
+        // waiting 주자는 swap만 가능 — reorder_swap 모드로 전환
+        if (status === 'waiting') mode = 'reorder_swap';
+
         const body = new URLSearchParams();
         body.append('mode', mode);
         body.append('reason', dReason.value.trim());
@@ -348,7 +375,7 @@
                 return;
             }
             body.append('steps', s);
-        } else if (mode === 'swap') {
+        } else if (mode === 'swap' || mode === 'reorder_swap') {
             if (!dSwapSelect.value) {
                 alert('교환할 주자를 선택하세요.');
                 return;
