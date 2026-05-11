@@ -138,10 +138,13 @@ def check_answer(submitted, correct, problem_type):
         return submitted == correct
 
 
+LAST_SEEN_THROTTLE_SECONDS = 120  # 2분 (DB write 부하 vs 온라인 추정 정확도 균형)
+
+
 @app.before_request
 def _update_runner_last_seen():
     """주자가 로그인된 상태에서 보내는 요청마다 last_seen_at 갱신.
-    30초 throttle 적용 (DB write 부하 방지)."""
+    LAST_SEEN_THROTTLE_SECONDS throttle 적용 (DB write 부하 방지)."""
     rid = session.get('runner_id')
     if not rid:
         return
@@ -152,7 +155,7 @@ def _update_runner_last_seen():
     if not runner:
         return
     now = datetime.utcnow()
-    if runner.last_seen_at and (now - runner.last_seen_at).total_seconds() < 30:
+    if runner.last_seen_at and (now - runner.last_seen_at).total_seconds() < LAST_SEEN_THROTTLE_SECONDS:
         return
     runner.last_seen_at = now
     try:
@@ -181,12 +184,17 @@ def admin_required(f):
 
 
 def get_group_rankings():
-    """조별 순위 계산. 완주한 조 → 완주 시간순, 미완주 조 → 진행률순."""
+    """조별 순위 계산. 완주한 조 → 완주 시간순, 미완주 조 → 진행률순.
+    N+1 쿼리 회피: 모든 주자를 한 번에 가져와 메모리에서 그룹핑."""
     groups = Group.query.order_by(Group.id).all()
+    all_runners = Runner.query.order_by(Runner.group_id, Runner.run_order).all()
+    runners_by_group = {}
+    for r in all_runners:
+        runners_by_group.setdefault(r.group_id, []).append(r)
     rankings = []
 
     for group in groups:
-        runners = Runner.query.filter_by(group_id=group.id).order_by(Runner.run_order).all()
+        runners = runners_by_group.get(group.id, [])
         total = len(runners)
         completed = sum(1 for r in runners if r.status in ('completed', 'passed', 'skipped'))
         # tie-breaker: skipped 제외(완주/PASS만)
