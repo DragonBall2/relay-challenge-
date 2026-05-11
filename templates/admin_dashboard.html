@@ -40,7 +40,7 @@
         {% endif %}
     </div>
     <div>
-        <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">10초마다 자동 갱신</span>
+        <span style="color: var(--text-secondary); font-size: 0.85rem;" id="auto-refresh-status">30초마다 자동 갱신</span>
         {% if initialized %}
         <form method="POST" action="{{ url_for('admin_toggle_open') }}" class="d-inline ms-2">
             {% if challenge_opened %}
@@ -431,7 +431,7 @@
         }
     });
 
-    setInterval(refreshPartial, 10000);  // 10초 (서버 부하 완화)
+    setInterval(refreshPartial, 30000);  // 30초 (서버 부하 완화)
 
     // firstPlayer.txt 모달
     const firstPlayerModal = new bootstrap.Modal(document.getElementById('firstPlayerModal'));
