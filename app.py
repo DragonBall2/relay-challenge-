@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     'defer_penalty_seconds': 0,  # 미루기 1회당 개인 랭킹에 더해지는 패널티 (초). 0 = 패널티 없음
     'buffer_ratio': 0.3,         # 스페어 풀 비율 (전체 인원 대비)
     'seed': 2026,                # 데이터셋 시드 (부서별 다른 데이터/답을 쓰고 싶을 때)
+    'session_epoch': 1,          # 세션 무효화용 카운터 (비공개 토글 시 +1 → 강제 로그아웃)
 }
 
 
@@ -142,11 +143,16 @@ LAST_SEEN_THROTTLE_SECONDS = 120  # 2분 (DB write 부하 vs 온라인 추정 �
 
 
 @app.before_request
-def _update_runner_last_seen():
-    """주자가 로그인된 상태에서 보내는 요청마다 last_seen_at 갱신.
-    LAST_SEEN_THROTTLE_SECONDS throttle 적용 (DB write 부하 방지)."""
+def _session_epoch_and_last_seen():
+    """주자 세션의 epoch 검증(불일치 시 강제 로그아웃) + last_seen_at 갱신."""
     rid = session.get('runner_id')
     if not rid:
+        return
+    # session_epoch 검증 — 관리자가 비공개 토글 시 epoch 증가 → 기존 세션 무효화
+    current_epoch = int(_read_settings().get('session_epoch', 1))
+    if session.get('session_epoch') != current_epoch:
+        session.pop('runner_id', None)
+        session.pop('session_epoch', None)
         return
     try:
         runner = db.session.get(Runner, rid)
@@ -338,6 +344,7 @@ def login():
 
     # 로그인 성공
     session['runner_id'] = runner.id
+    session['session_epoch'] = int(_read_settings().get('session_epoch', 1))
     session.permanent = True
     if not runner.started_at:
         runner.started_at = datetime.utcnow()
@@ -364,6 +371,11 @@ def challenge():
         flash('현재 진행 중인 주자만 접속할 수 있습니다.', 'warning')
         session.pop('runner_id', None)
         return redirect(url_for('index'))
+
+    # started_at이 비어 있으면 그 시점부터 시작 (관리자 active 리셋 후 첫 진입 시)
+    if not runner.started_at:
+        runner.started_at = datetime.utcnow()
+        db.session.commit()
 
     # 순서 교환 후보: 같은 조에서 본인보다 뒤이면서 대기 중인 주자
     swap_candidates = Runner.query.filter(
@@ -969,6 +981,26 @@ def admin_defer(runner_id):
 def admin_reset(runner_id):
     runner = Runner.query.get_or_404(runner_id)
 
+    # ---- active 주자: 진행 상태 초기화 (시간 초기화, 위치 유지) ----
+    # started_at=None 으로 두어 주자가 재로그인하는 시점부터 시계가 다시 시작되도록 함
+    if runner.status == 'active':
+        runner.attempts = 0
+        runner.submitted_answer = None
+        runner.reason = None
+        runner.started_at = None
+        db.session.commit()
+        if _is_ajax():
+            return jsonify({'ok': True, 'kind': 'active_reset'})
+        flash(f'{runner.name} 진행 상태 초기화 (재로그인 시점부터 시간 카운트 시작)', 'info')
+        return redirect(url_for('admin_dashboard'))
+
+    # ---- 종료 상태 주자: active로 복원 (기존 동작) ----
+    if runner.status not in ('completed', 'passed', 'skipped'):
+        if _is_ajax():
+            return jsonify({'ok': False, 'message': '리셋 가능한 상태가 아닙니다.'}), 400
+        flash('리셋 가능한 상태가 아닙니다.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
     # 다음 주자가 이미 활성화되어 있으면 되돌리기
     next_runner = Runner.query.filter_by(
         group_id=runner.group_id,
@@ -986,7 +1018,7 @@ def admin_reset(runner_id):
     runner.reason = None
 
     # 조 완료 상태도 리셋
-    group = db.session.get(Group,runner.group_id)
+    group = db.session.get(Group, runner.group_id)
     if group.finished_at:
         group.finished_at = None
 
@@ -1092,11 +1124,16 @@ def admin_toggle_open():
 
     settings = _read_settings()
     new_state = not settings.get('challenge_opened', False)
-    _write_settings({'challenge_opened': new_state})
+    update = {'challenge_opened': new_state}
+    # 비공개 전환 시 session_epoch 증가 → 진행 중이던 참가자 세션 모두 무효화 (강제 로그아웃)
+    if not new_state:
+        update['session_epoch'] = int(settings.get('session_epoch', 1)) + 1
+    _write_settings(update)
 
     if _is_ajax():
         return jsonify({'ok': True, 'opened': new_state})
-    flash('챌린지를 공개했습니다.' if new_state else '챌린지를 비공개로 전환했습니다.', 'success')
+    msg = '챌린지를 공개했습니다.' if new_state else '챌린지를 비공개로 전환하고 참가자 세션을 모두 종료했습니다.'
+    flash(msg, 'success')
     return redirect(url_for('admin_dashboard'))
 
 

@@ -61,6 +61,18 @@ def reset_client_state(c):
             pass
 
 
+def _current_session_epoch():
+    """settings.json 의 현재 epoch 값."""
+    from app import _read_settings
+    return int(_read_settings().get('session_epoch', 1))
+
+
+def login_as_runner(c, sess, runner_id):
+    """테스트에서 수동 로그인 시뮬 — runner_id + session_epoch 함께 설정."""
+    sess['runner_id'] = runner_id
+    sess['session_epoch'] = _current_session_epoch()
+
+
 # ============================================================
 # 챌린지 데이터 파서 (정답 무결성 검증용)
 # ============================================================
@@ -477,7 +489,7 @@ def main():
             completed = Runner.query.filter_by(status='completed').first()
             cmp_id = completed.id
         with c.session_transaction() as sess:
-            sess['runner_id'] = cmp_id
+            login_as_runner(c, sess, cmp_id)
 
         r = c.post('/review', data={'review': '재미있었어요. e2e 테스트입니다.'}, follow_redirects=False)
         check(r.status_code == 302, '후기 POST 302')
@@ -503,7 +515,7 @@ def main():
             db.session.commit()
             before = active.last_seen_at
         with c.session_transaction() as sess:
-            sess['runner_id'] = ac_id
+            login_as_runner(c, sess, ac_id)
         c.get('/')
         with app.app_context():
             r_ = db.session.get(Runner, ac_id)
