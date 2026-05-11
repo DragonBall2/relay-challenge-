@@ -46,13 +46,26 @@ DEFAULT_SETTINGS = {
 }
 
 
+_settings_cache = {'data': None, 'mtime': 0.0}
+
+
 def _read_settings() -> dict:
+    """settings.json 캐싱 (mtime 기반). 매 요청 디스크 I/O 방지."""
+    try:
+        mtime = os.path.getmtime(SETTINGS_PATH)
+    except OSError:
+        return dict(DEFAULT_SETTINGS)
+    if _settings_cache['data'] is not None and _settings_cache['mtime'] == mtime:
+        return _settings_cache['data']
     try:
         with open(SETTINGS_PATH, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return {**DEFAULT_SETTINGS, **data}
+        merged = {**DEFAULT_SETTINGS, **data}
     except (FileNotFoundError, json.JSONDecodeError):
-        return dict(DEFAULT_SETTINGS)
+        merged = dict(DEFAULT_SETTINGS)
+    _settings_cache['data'] = merged
+    _settings_cache['mtime'] = mtime
+    return merged
 
 
 def _write_settings(data: dict) -> None:
@@ -189,9 +202,17 @@ def admin_required(f):
     return decorated
 
 
+_rankings_cache = {'data': None, 'expires': 0.0}
+RANKINGS_CACHE_SECONDS = 3
+
+
 def get_group_rankings():
     """조별 순위 계산. 완주한 조 → 완주 시간순, 미완주 조 → 진행률순.
-    N+1 쿼리 회피: 모든 주자를 한 번에 가져와 메모리에서 그룹핑."""
+    N+1 쿼리 회피 + 짧은 인메모리 캐시 (서버 부하 완화)."""
+    import time
+    now = time.monotonic()
+    if _rankings_cache['data'] is not None and _rankings_cache['expires'] > now:
+        return _rankings_cache['data']
     groups = Group.query.order_by(Group.id).all()
     all_runners = Runner.query.order_by(Runner.group_id, Runner.run_order).all()
     runners_by_group = {}
@@ -245,7 +266,15 @@ def get_group_rankings():
     all_ranked = finished + unfinished
     for i, r in enumerate(all_ranked):
         r['rank'] = i + 1
+    _rankings_cache['data'] = all_ranked
+    _rankings_cache['expires'] = now + RANKINGS_CACHE_SECONDS
     return all_ranked
+
+
+def _invalidate_rankings_cache():
+    """주자 상태가 바뀌었을 때 호출 — 다음 조회 시 새로 계산."""
+    _rankings_cache['data'] = None
+    _rankings_cache['expires'] = 0.0
 
 
 def format_timedelta(td):
@@ -398,6 +427,11 @@ def submit():
     if not submitted:
         flash('답을 입력하세요.', 'warning')
         return redirect(url_for('challenge'))
+
+    # 안전망: started_at이 비어 있으면 지금 시각으로 설정 (관리자 active 리셋 직후
+    # /challenge 새로고침 없이 /submit 호출된 레이스 케이스 보호)
+    if not runner.started_at:
+        runner.started_at = datetime.utcnow()
 
     runner.attempts += 1
     is_correct = check_answer(submitted, runner.correct_answer, runner.problem_type)
@@ -638,6 +672,9 @@ def get_individual_rankings(limit=20, defer_penalty_seconds=0):
         .filter(Runner.completed_at.isnot(None)).all()
     items = []
     for r in runners:
+        # 방어적 체크 (race condition 보호)
+        if not r.started_at or not r.completed_at:
+            continue
         raw = r.completed_at - r.started_at
         defers = r.deferred_count or 0
         penalty = timedelta(seconds=defers * defer_penalty_seconds)
