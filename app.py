@@ -4,11 +4,15 @@
 """
 
 import json
+import logging
 import os
 import secrets
 import string
+import time
+import traceback
 from datetime import datetime, timedelta
 from functools import wraps
+from logging.handlers import TimedRotatingFileHandler
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, send_file, jsonify, abort, make_response)
@@ -116,6 +120,73 @@ def create_app():
 
 
 app = create_app()
+
+
+# ============================================================
+# 구조화 로깅 — 사고 진단용 (app.log, 일 단위 rotation, 7일 보관)
+# ============================================================
+LOG_PATH = os.path.join(os.path.dirname(__file__), 'app.log')
+SLOW_REQUEST_MS = 500  # 이 시간 이상 응답은 WARNING 로그
+
+_app_logger = logging.getLogger('relay')
+if not _app_logger.handlers:
+    _app_logger.setLevel(logging.INFO)
+    _h = TimedRotatingFileHandler(LOG_PATH, when='midnight', backupCount=7, encoding='utf-8')
+    _h.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    _app_logger.addHandler(_h)
+    _app_logger.propagate = False
+
+
+def _log_event(level: str, event: str, **kv):
+    """구조화 이벤트 로그. kwargs는 key=value 로 직렬화.
+    level: 'INFO' | 'WARNING' | 'ERROR'
+    """
+    parts = [f'event={event}']
+    for k, v in kv.items():
+        if v is None:
+            v = 'None'
+        elif isinstance(v, str):
+            # 공백·등호 포함 시 따옴표 처리
+            if ' ' in v or '=' in v or '\n' in v:
+                v = '"' + v.replace('"', "'").replace('\n', '\\n') + '"'
+        parts.append(f'{k}={v}')
+    msg = ' '.join(parts)
+    func = getattr(_app_logger, level.lower(), _app_logger.info)
+    func(msg)
+
+
+@app.before_request
+def _request_start_time():
+    from flask import g
+    g._req_start = time.monotonic()
+
+
+@app.after_request
+def _log_slow_request(response):
+    from flask import g, request
+    start = getattr(g, '_req_start', None)
+    if start is None:
+        return response
+    elapsed_ms = (time.monotonic() - start) * 1000
+    if elapsed_ms >= SLOW_REQUEST_MS:
+        _log_event('WARNING', 'slow_request',
+                   path=request.path, method=request.method,
+                   status=response.status_code, ms=int(elapsed_ms))
+    return response
+
+
+@app.errorhandler(Exception)
+def _log_unhandled_exception(e):
+    # Flask의 abort() 같은 HTTPException은 그대로 전파 (4xx/3xx)
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    from flask import request
+    _log_event('ERROR', 'unhandled_exception',
+               path=request.path, method=request.method,
+               exc=type(e).__name__, msg=str(e))
+    _app_logger.error('traceback:\n' + traceback.format_exc())
+    raise e
 
 
 # ============================================================
@@ -375,9 +446,15 @@ def login():
     session['runner_id'] = runner.id
     session['session_epoch'] = int(_read_settings().get('session_epoch', 1))
     session.permanent = True
+    fresh_start = False
     if not runner.started_at:
         runner.started_at = datetime.utcnow()
+        fresh_start = True
         db.session.commit()
+    _log_event('INFO', 'login',
+               runner_id=runner.id, knox_id=runner.knox_id,
+               group=runner.group_id, order=runner.run_order,
+               fresh_start=fresh_start)
 
     return redirect(url_for('challenge'))
 
@@ -432,6 +509,8 @@ def submit():
     # /challenge 새로고침 없이 /submit 호출된 레이스 케이스 보호)
     if not runner.started_at:
         runner.started_at = datetime.utcnow()
+        _log_event('WARNING', 'started_at_none_in_submit',
+                   runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id)
 
     runner.attempts += 1
     is_correct = check_answer(submitted, runner.correct_answer, runner.problem_type)
@@ -451,6 +530,12 @@ def submit():
         runner.submitted_answer = submitted
         _activate_next_runner(runner)
         db.session.commit()
+        elapsed = int((runner.completed_at - runner.started_at).total_seconds()) \
+            if runner.started_at else None
+        _log_event('INFO', 'submit_correct',
+                   runner_id=runner.id, knox_id=runner.knox_id,
+                   group=runner.group_id, order=runner.run_order,
+                   attempts=runner.attempts, elapsed_s=elapsed)
         # 디바이스 쿠키 설정: 이 브라우저를 이 사용자에게 귀속
         resp = make_response(redirect(url_for('success')))
         resp.set_cookie('device_completed_by', runner.knox_id.lower(),
@@ -459,6 +544,10 @@ def submit():
     else:
         runner.submitted_answer = submitted
         db.session.commit()
+        _log_event('INFO', 'submit_wrong',
+                   runner_id=runner.id, knox_id=runner.knox_id,
+                   group=runner.group_id, order=runner.run_order,
+                   attempts=runner.attempts)
         flash(f'오답입니다. 다시 시도하세요. (시도 횟수: {runner.attempts}회)', 'danger')
         return redirect(url_for('challenge'))
 
@@ -529,6 +618,12 @@ def defer():
         runner.next_runner_password = new_password
 
     db.session.commit()
+    _log_event('INFO', 'defer_n_steps',
+               runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id,
+               steps=steps, old_order=old_order, new_order=new_order,
+               problem_swapped=swapped)
+    if not swapped:
+        _log_event('WARNING', 'spare_pool_empty', context='defer', runner_id=runner.id)
     suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
     flash(f'{steps}칸 뒤로 이동했습니다. 다음 주자에게 비밀번호를 전달하세요.{suffix}', 'info')
     return redirect(url_for('defer_result'))
@@ -585,6 +680,13 @@ def defer_swap():
     runner.next_runner_password = new_password
 
     db.session.commit()
+    _log_event('INFO', 'defer_swap',
+               runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id,
+               target_runner_id=target.id, target_knox=target.knox_id,
+               my_order_new=runner.run_order, target_order_new=target.run_order,
+               problem_swapped=swapped)
+    if not swapped:
+        _log_event('WARNING', 'spare_pool_empty', context='defer_swap', runner_id=runner.id)
     suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
     flash(f'{target.name}님과 순서를 바꿨습니다. 그분에게 비밀번호를 전달하세요.{suffix}', 'info')
     return redirect(url_for('defer_result'))
@@ -853,6 +955,9 @@ def admin_skip(runner_id):
         runner.reason = reason or None
         _activate_next_runner(runner)
         db.session.commit()
+        _log_event('INFO', 'admin_skip',
+                   runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id,
+                   reason=reason or '')
         if _is_ajax():
             return jsonify({'ok': True})
         flash(f'{runner.name} 건너뛰기 완료', 'info')
@@ -874,6 +979,9 @@ def admin_pass(runner_id):
         runner.submitted_answer = '[admin_pass]'
         _activate_next_runner(runner)
         db.session.commit()
+        _log_event('INFO', 'admin_pass',
+                   runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id,
+                   reason=reason or '')
         if _is_ajax():
             return jsonify({'ok': True})
         flash(f'{runner.name} PASS 처리 완료', 'success')
@@ -1006,6 +1114,12 @@ def admin_defer(runner_id):
     swapped = _swap_with_spare_problem(runner)
 
     db.session.commit()
+    _log_event('INFO', 'admin_defer',
+               mode=mode, runner_id=runner.id, knox_id=runner.knox_id,
+               group=runner.group_id, old_order=old_order, new_order=new_order,
+               problem_swapped=swapped, reason=reason or '')
+    if not swapped:
+        _log_event('WARNING', 'spare_pool_empty', context='admin_defer', runner_id=runner.id)
     if _is_ajax():
         return jsonify({'ok': True, 'swapped': swapped, 'new_order': new_order})
     msg_suffix = '' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
@@ -1029,6 +1143,12 @@ def admin_reset(runner_id):
         runner.started_at = None
         swapped = _swap_with_spare_problem(runner)
         db.session.commit()
+        _log_event('INFO', 'admin_reset_active',
+                   runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id,
+                   problem_swapped=swapped)
+        if not swapped:
+            _log_event('WARNING', 'spare_pool_empty',
+                       context='admin_reset_active', runner_id=runner.id)
         if _is_ajax():
             return jsonify({'ok': True, 'kind': 'active_reset', 'problem_swapped': swapped})
         suffix = ' + 새 문제 출제' if swapped else ' (스페어 풀 부족: 동일 문제 유지)'
@@ -1064,6 +1184,8 @@ def admin_reset(runner_id):
         group.finished_at = None
 
     db.session.commit()
+    _log_event('INFO', 'admin_reset_terminal',
+               runner_id=runner.id, knox_id=runner.knox_id, group=runner.group_id)
     if _is_ajax():
         return jsonify({'ok': True})
     flash(f'{runner.name} 리셋 완료', 'info')
@@ -1170,6 +1292,9 @@ def admin_toggle_open():
     if not new_state:
         update['session_epoch'] = int(settings.get('session_epoch', 1)) + 1
     _write_settings(update)
+    _log_event('INFO', 'challenge_toggle',
+               opened=new_state,
+               session_epoch=update.get('session_epoch', settings.get('session_epoch', 1)))
 
     if _is_ajax():
         return jsonify({'ok': True, 'opened': new_state})
