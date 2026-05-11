@@ -49,6 +49,7 @@ DEFAULT_SETTINGS = {
     'buffer_ratio': 0.3,         # 스페어 풀 비율 (전체 인원 대비)
     'seed': 2026,                # 데이터셋 시드 (부서별 다른 데이터/답을 쓰고 싶을 때)
     'session_epoch': 1,          # 세션 무효화용 카운터 (비공개 토글 시 +1 → 강제 로그아웃)
+    'challenge_data_url': '',    # 외부 호스팅 URL (값이 있으면 다운로드를 그 URL로 redirect)
 }
 
 
@@ -834,6 +835,11 @@ def roster():
 @app.route('/download/challenge_data')
 @challenge_open_required
 def download_challenge_data():
+    # settings.json에 외부 URL이 설정되어 있으면 그곳으로 redirect
+    # (서버 대역폭 절약 — 130명 동시 다운로드 시 waitress thread 점유 방지)
+    external_url = (_read_settings().get('challenge_data_url') or '').strip()
+    if external_url:
+        return redirect(external_url, code=302)
     path = config.CHALLENGE_DATA_PATH
     if not os.path.exists(path):
         abort(404)
