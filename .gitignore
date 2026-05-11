@@ -14,6 +14,11 @@ sample_participants*.csv
 # 환경변수
 .env
 
+# 운영 로그 (rotation: app.log, app.log.YYYY-MM-DD)
+app.log
+app.log.*
+waitress.log
+
 # Python
 __pycache__/
 *.pyc
