@@ -15,6 +15,16 @@
       <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 1.5rem;">
         공지된 시작 시각까지 이 페이지를 새로고침하며 대기해 주세요.
       </p>
+      {% if data_available %}
+      <hr style="margin: 1.5rem auto; max-width: 320px; opacity: 0.3;">
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.75rem;">
+        💡 시작 전에 데이터 파일을 미리 받아두세요.
+      </p>
+      <a href="{{ url_for('download_challenge_data') }}"
+         class="btn btn-outline-primary btn-sm">
+        💾 challenge_data.dat 미리 다운로드
+      </a>
+      {% endif %}
     </div>
   </div>
 </div>
