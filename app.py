@@ -1222,6 +1222,26 @@ def admin_reset(runner_id):
     return redirect(url_for('admin_dashboard'))
 
 
+@app.route('/admin/api/active-runners')
+@admin_required
+def admin_api_active_runners():
+    """현재 active 주자 목록 (관리자 모달용). 호출 시점의 최신 상태 반환."""
+    actives = Runner.query.filter_by(status='active').order_by(Runner.group_id).all()
+    group_names = {g.id: g.name for g in Group.query.all()}
+    return jsonify({
+        'ok': True,
+        'runners': [
+            {
+                'group': group_names.get(r.group_id, f'조 {r.group_id}'),
+                'name': r.name,
+                'knox_id': r.knox_id,
+                'password': r.password or '',
+            }
+            for r in actives
+        ],
+    })
+
+
 @app.route('/admin/partial/groups')
 @admin_required
 def admin_partial_groups():
