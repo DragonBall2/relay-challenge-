@@ -110,7 +110,10 @@ def challenge_open_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not _is_challenge_open():
-            return render_template('coming_soon.html'), 200
+            external_url = (_read_settings().get('challenge_data_url') or '').strip()
+            data_available = bool(external_url) or os.path.exists(config.CHALLENGE_DATA_PATH)
+            return render_template('coming_soon.html',
+                                   data_available=data_available), 200
         return f(*args, **kwargs)
     return decorated
 
@@ -833,8 +836,9 @@ def roster():
 
 
 @app.route('/download/challenge_data')
-@challenge_open_required
 def download_challenge_data():
+    # 비공개 상태에서도 다운로드 허용 — 행사 시작 전 미리 받아두면 트래픽 분산.
+    # 파일/URL 자체는 비밀 정보가 아님 (정답이 들어 있지 않음).
     # settings.json에 외부 URL이 설정되어 있으면 그곳으로 redirect
     # (서버 대역폭 절약 — 130명 동시 다운로드 시 waitress thread 점유 방지)
     external_url = (_read_settings().get('challenge_data_url') or '').strip()
