@@ -71,7 +71,18 @@
                     <tr>
                         <td>{{ runner.run_order }}</td>
                         <td style="font-weight: 600;">{{ runner.name }}</td>
-                        <td><code>{{ runner.knox_id }}</code></td>
+                        <td>
+                            <code>{{ runner.knox_id }}</code>
+                            {% if runner.status == 'active' %}
+                            <button type="button"
+                                    class="btn btn-link btn-sm p-0 ms-1 js-copy-runner-msg"
+                                    style="font-size: 0.85rem; vertical-align: baseline; text-decoration: none;"
+                                    title="안내 메시지 복사"
+                                    data-name="{{ runner.name }}"
+                                    data-knox-id="{{ runner.knox_id }}"
+                                    data-password="{{ runner.password or '' }}">📋</button>
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="badge-status badge-{{ runner.status }}">
                                 {% if runner.status == 'waiting' %}대기
