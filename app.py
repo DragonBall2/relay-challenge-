@@ -50,6 +50,8 @@ DEFAULT_SETTINGS = {
     'seed': 2026,                # 데이터셋 시드 (부서별 다른 데이터/답을 쓰고 싶을 때)
     'session_epoch': 1,          # 세션 무효화용 카운터 (비공개 토글 시 +1 → 강제 로그아웃)
     'challenge_data_url': '',    # 외부 호스팅 URL (값이 있으면 다운로드를 그 URL로 redirect)
+    'hard_repo_url': '',         # difficulty=hard 일 때 참가자가 클론할 repo URL
+    'hard_problems_path': '',    # difficulty=hard 일 때 hard-challenge/problems.json 경로
 }
 
 

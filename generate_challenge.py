@@ -993,7 +993,7 @@ def _scaled_data_sizes(total_problems: int) -> dict:
     }
 
 
-DIFFICULTY_LEVELS = ('easy', 'medium')  # 'hard'는 이번 범위 밖
+DIFFICULTY_LEVELS = ('easy', 'medium', 'hard')  # 'hard'는 외부 repo 기반 (hard_loader 사용)
 
 
 def _build_pools(total_problems: int, difficulty: str = 'medium', seed: int = SEED):
@@ -1006,6 +1006,11 @@ def _build_pools(total_problems: int, difficulty: str = 'medium', seed: int = SE
     """
     if difficulty not in DIFFICULTY_LEVELS:
         raise ValueError(f"unknown difficulty: {difficulty!r} (allowed: {DIFFICULTY_LEVELS})")
+    if difficulty == 'hard':
+        raise NotImplementedError(
+            "difficulty='hard' uses external repo (hard_loader.py), "
+            "not challenge_data.dat. Do not call generate/_build_pools for hard."
+        )
 
     random.seed(seed)
     sizes = _scaled_data_sizes(total_problems)

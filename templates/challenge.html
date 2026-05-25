@@ -21,7 +21,25 @@
             </div>
         </div>
 
-        <!-- 안내 -->
+        {% if runner.problem_type == 'HARD' %}
+        <!-- HARD: 디버깅 챌린지 안내 -->
+        <div class="alert" style="background: rgba(255,140,0,0.1); border: 1px solid rgba(255,140,0,0.3); color: #ffb04d; border-radius: 12px;" role="alert">
+            <strong>🐛 디버깅 챌린지:</strong> 본 문제는 별도 GitHub repo를 클론하여
+            로컬에서 웹 서버를 띄우고 코딩 에이전트와 함께 버그를 찾아 수정해야 합니다.
+            정상 동작 후 화면에 표시되는 값을 답안에 입력하세요.
+        </div>
+
+        <!-- 문제 (Hard) -->
+        <div class="card mb-4">
+            <div class="card-header py-3">
+                <h5 class="mb-0" style="font-weight: 700;">디버깅 챌린지 정보</h5>
+            </div>
+            <div class="card-body">
+                <pre class="problem-text" style="white-space: pre-wrap; font-family: 'D2Coding', Consolas, monospace; font-size: 0.9rem; margin: 0;">{{ runner.problem_text }}</pre>
+            </div>
+        </div>
+        {% else %}
+        <!-- Easy/Medium: 데이터 분석 안내 -->
         <div class="alert" style="background: rgba(65,105,225,0.1); border: 1px solid rgba(65,105,225,0.3); color: var(--samsung-blue-light); border-radius: 12px;" role="alert">
             <strong>풀이 방법:</strong> 아래 문제를 코딩 에이전트(Roo Code / Open Code)에 그대로 입력하세요.
             에이전트가 challenge_data.dat를 분석하는 코드를 작성하고 실행하여 답을 알려줍니다.
@@ -40,6 +58,7 @@
                 <div class="problem-text">{{ runner.problem_text }}</div>
             </div>
         </div>
+        {% endif %}
 
         <!-- 답안 제출 -->
         <div class="card">

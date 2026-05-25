@@ -148,8 +148,8 @@ def init_database(
     buffer_count = max(0, _math.ceil(total * float(buffer_ratio)))
     grand_total = total + buffer_count
 
-    # 문제 풀 재생성 (필요 시)
-    if regen_challenge_data:
+    # 문제 풀 재생성 (필요 시) — hard는 외부 repo 기반이라 스킵
+    if regen_challenge_data and difficulty != 'hard':
         print(f"challenge_data.dat 재생성 (N={grand_total} = 본 {total} + 스페어 {buffer_count}, difficulty={difficulty}, seed={seed})...")
         generate_main(
             total_problems=grand_total,
@@ -185,17 +185,38 @@ def init_database(
         print("DB 테이블 생성 완료")
 
         try:
-            # 1. 문제 로드 (총 grand_total개 = 본 + 스페어)
-            print(f"{grand_total}개 문제 로드 중 (본 {total} + 스페어 {buffer_count}, difficulty={difficulty}, seed={seed})...")
-            problems = get_all_problems(total_problems=grand_total, difficulty=difficulty, seed=seed)
-            if len(problems) < grand_total:
-                raise RuntimeError(
-                    f"문제 부족: 요청 {grand_total}개, 생성 {len(problems)}개. "
-                    "regen_challenge_data=True 로 재생성하거나 buffer_ratio를 줄이세요."
+            # 1. 문제 로드 — hard는 외부 problems.json, 그 외는 challenge_data.dat
+            if difficulty == 'hard':
+                from hard_loader import load_hard_problems
+                from app import _read_settings
+                settings = _read_settings()
+                problems_path = settings.get('hard_problems_path', '').strip()
+                repo_url = settings.get('hard_repo_url', '').strip()
+                if not problems_path:
+                    raise RuntimeError(
+                        "difficulty='hard'인데 settings.hard_problems_path 미설정"
+                    )
+                if not repo_url:
+                    raise RuntimeError(
+                        "difficulty='hard'인데 settings.hard_repo_url 미설정"
+                    )
+                print(f"hard 모드: {problems_path} 로드 (N={grand_total})")
+                main_problems, spare_problems = load_hard_problems(
+                    problems_path, repo_url, total, buffer_count,
                 )
-            main_problems = problems[:total]
-            spare_problems = problems[total:]
-            print(f"  본 {len(main_problems)}개 + 스페어 {len(spare_problems)}개 준비 완료")
+                print(f"  hard 본 {len(main_problems)}개 + 스페어 "
+                      f"{len(spare_problems)}개 로드")
+            else:
+                print(f"{grand_total}개 문제 로드 중 (본 {total} + 스페어 {buffer_count}, difficulty={difficulty}, seed={seed})...")
+                problems = get_all_problems(total_problems=grand_total, difficulty=difficulty, seed=seed)
+                if len(problems) < grand_total:
+                    raise RuntimeError(
+                        f"문제 부족: 요청 {grand_total}개, 생성 {len(problems)}개. "
+                        "regen_challenge_data=True 로 재생성하거나 buffer_ratio를 줄이세요."
+                    )
+                main_problems = problems[:total]
+                spare_problems = problems[total:]
+                print(f"  본 {len(main_problems)}개 + 스페어 {len(spare_problems)}개 준비 완료")
 
             # 2. 참가자 순서 확정
             if ordered_participants is not None:
