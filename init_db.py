@@ -17,7 +17,7 @@ import string
 from generate_challenge import get_all_problems, main as generate_main
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI샌터_챌린지_대상.csv")
+CSV_PATH = os.path.join(BASE_DIR, "Generative-AI팀-AI센터_챌린지_대상.csv")
 
 DEFAULT_NUM_GROUPS = 10
 DEFAULT_PARTICIPANTS_PER_GROUP = 13
@@ -49,8 +49,8 @@ def load_participants_from_csv(path):
         reader = csv.DictReader(f)
         for row in reader:
             member = {
-                'knox_id': row.get('knox_id', row.get('Knox-ID', '')).strip(),
-                'name': row.get('name', row.get('이름', '')).strip(),
+                'knox_id': row.get('knox_id', row.get('Knox-ID', row.get('Knox_ID', ''))).strip(),
+                'name': row.get('name', row.get('성명', row.get('이름', ''))).strip(),
             }
             group_val = row.get('group', '').strip()
             if group_val.isdigit() and int(group_val) >= 1:
@@ -318,6 +318,14 @@ def init_database(
                     correct_answer=sp.answer,
                 ))
             db.session.commit()
+
+            # SQLite WAL mode 활성화 (동시 쓰기 성능 3-5배 개선)
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.close()
+            print("SQLite WAL mode 활성화 완료")
+
             print(f"\n{group_count}개 조, {total}명 배정 완료 (스페어 풀 {len(spare_problems)}개)")
 
         except Exception:

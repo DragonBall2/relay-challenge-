@@ -19,6 +19,15 @@ DATABASE_PATH = os.path.join(BASE_DIR, 'relay.db')
 SQLALCHEMY_DATABASE_URI = f'sqlite:///{DATABASE_PATH}'
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+# SQLite 최적화 설정 (동시 접속 10명 안정화)
+SQLALCHEMY_ENGINE_OPTIONS = {
+    'connect_args': {
+        'check_same_thread': False,
+        'timeout': 30,        # 30초 타임아웃
+    },
+    'pool_pre_ping': True,   # 연결 확인 (stale connection 방지)
+}
+
 ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'challenge2026!')
 
