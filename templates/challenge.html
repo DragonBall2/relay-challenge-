@@ -114,7 +114,17 @@
 
 {% block scripts %}
 <script>
+// 한 번이라도 defer/swap 제출이 시작되면 모든 defer/swap/submit 버튼을 비활성화
+// (더블 클릭/중복 요청 race 방지)
+let _deferSubmitting = false;
+function _lockAllSubmits() {
+    _deferSubmitting = true;
+    document.querySelectorAll('button[type="submit"], input[type="submit"]')
+        .forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+}
+
 function deferConfirm(ev) {
+    if (_deferSubmitting) { ev.preventDefault(); return false; }
     const form = ev.target;
     const stepsInput = form.querySelector('input[name="steps"]');
     const steps = parseInt(stepsInput.value, 10);
@@ -137,10 +147,12 @@ function deferConfirm(ev) {
         return false;
     }
     document.getElementById('deferReasonField').value = (reason || '').slice(0, 100);
+    _lockAllSubmits();
     return true;
 }
 
 function swapConfirm(ev) {
+    if (_deferSubmitting) { ev.preventDefault(); return false; }
     const form = ev.target;
     const sel = form.querySelector('select[name="target_order"]');
     if (!sel.value) {
@@ -160,6 +172,7 @@ function swapConfirm(ev) {
         return false;
     }
     document.getElementById('swapReasonField').value = (reason || '').slice(0, 100);
+    _lockAllSubmits();
     return true;
 }
 </script>

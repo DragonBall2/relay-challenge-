@@ -611,13 +611,16 @@ def defer():
     # 새 문제로 교체 (스페어 풀에서 1건). 풀 비어있으면 동일 문제 유지.
     swapped = _swap_with_spare_problem(runner)
 
-    # 당겨진 순서(old_order)의 waiting 주자 활성화 + 새 비번을 본인에게도 전달용으로 저장
-    next_runner = Runner.query.filter_by(
-        group_id=runner.group_id,
-        run_order=old_order,
-    ).first()
+    # 다음 active 주자 결정: 본인을 제외한 같은 조의 'waiting' 주자 중 run_order가 가장 작은 사람.
+    # 사이에 skipped/passed 주자가 있어 old_order 위치가 비-waiting 상태일 수 있으므로,
+    # 단순히 run_order=old_order로 조회하면 조 전체가 멈출 수 있음 (P0 버그 수정).
+    next_runner = Runner.query.filter(
+        Runner.group_id == runner.group_id,
+        Runner.status == 'waiting',
+        Runner.id != runner.id,
+    ).order_by(Runner.run_order).first()
     new_password = None
-    if next_runner and next_runner.status == 'waiting':
+    if next_runner:
         new_password = generate_password()
         next_runner.password = new_password
         next_runner.status = 'active'
@@ -1220,6 +1223,26 @@ def admin_reset(runner_id):
         return jsonify({'ok': True})
     flash(f'{runner.name} 리셋 완료', 'info')
     return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/api/active-runners')
+@admin_required
+def admin_api_active_runners():
+    """현재 active 주자 목록 (관리자 모달용). 호출 시점의 최신 상태 반환."""
+    actives = Runner.query.filter_by(status='active').order_by(Runner.group_id).all()
+    group_names = {g.id: g.name for g in Group.query.all()}
+    return jsonify({
+        'ok': True,
+        'runners': [
+            {
+                'group': group_names.get(r.group_id, f'조 {r.group_id}'),
+                'name': r.name,
+                'knox_id': r.knox_id,
+                'password': r.password or '',
+            }
+            for r in actives
+        ],
+    })
 
 
 @app.route('/admin/partial/groups')

@@ -256,6 +256,77 @@ def test_r5_stale_session(app, db, Runner):
               'R5-b 옛 epoch 세션으로 /submit 차단 (상태 변경 없음)')
 
 
+def test_r6_self_defer_over_skipped(app, db, Runner):
+    """R6: self-defer 시 사이에 skipped/passed 주자가 있어도 다음 active 정상 활성화.
+
+    회귀 테스트 — 과거 버그:
+      run_order=old_order 위치만 보고 활성화 → 사이에 skipped 있으면 조 전체 멈춤.
+    수정: 본인 제외, 같은 조의 'waiting' 중 run_order 최소를 활성화.
+    """
+    section('R6. self-defer over skipped runner (P0 regression)')
+    reset_db()
+    from app import _read_settings
+    with app.test_client() as c:
+        with c.session_transaction() as sess:
+            sess['is_admin'] = True
+        c.post('/admin/toggle-open',
+               headers={'X-Requested-With': 'XMLHttpRequest'})
+
+        # 조 1 세팅:
+        #   pos 1: completed
+        #   pos 2: active (defer-er)
+        #   pos 3: skipped (관리자가 처리)
+        #   pos 4: waiting
+        #   pos 5: waiting
+        with app.app_context():
+            r1, r2, r3, r4, r5 = Runner.query.filter_by(group_id=1)\
+                .order_by(Runner.run_order).limit(5).all()
+            r1.status = 'completed'
+            r1.started_at = datetime.utcnow() - timedelta(minutes=10)
+            r1.completed_at = datetime.utcnow() - timedelta(minutes=5)
+            r2.status = 'active'
+            r2.started_at = datetime.utcnow() - timedelta(minutes=4)
+            r2.password = 'DEFER_ME'
+            r3.status = 'skipped'  # 사이에 끼인 비-waiting
+            r3.started_at = datetime.utcnow() - timedelta(minutes=3)
+            r3.completed_at = datetime.utcnow() - timedelta(minutes=3)
+            r3.reason = 'skip_test'
+            db.session.commit()
+            r2_id, r4_id, r5_id = r2.id, r4.id, r5.id
+
+        # r2(defer-er)로 로그인
+        with c.session_transaction() as sess:
+            sess.clear()
+            sess['runner_id'] = r2_id
+            sess['session_epoch'] = int(_read_settings().get('session_epoch', 1))
+
+        # steps=2 self-defer (max_steps = 5-2 = 3, 사이에 skipped 있음)
+        r = c.post('/defer', data={'steps': '2', 'reason': 'R6-test'},
+                   follow_redirects=False)
+        check(r.status_code == 302, 'R6-a /defer steps=2 → 302')
+
+        # 검증: 조 1에 active가 정확히 1명 존재해야 함 (스킵 사이 통과)
+        with app.app_context():
+            actives = Runner.query.filter_by(group_id=1, status='active').all()
+        check(len(actives) == 1,
+              f'R6-b skipped 사이에 있어도 다음 active 활성화 (실제 {len(actives)}명)')
+
+        if actives:
+            new_active = actives[0]
+            check(new_active.id in (r4_id, r5_id),
+                  f'R6-c 활성화된 주자가 원래 waiting이었던 r4 또는 r5 (활성={new_active.id})')
+            check(new_active.password != '' and len(new_active.password) >= 6,
+                  f'R6-d 새 active에 비밀번호 발급됨')
+
+        # r2 상태 검증: waiting + 새 run_order 4 (old_order=2 + steps=2)
+        with app.app_context():
+            r2_after = db.session.get(Runner, r2_id)
+        check(r2_after.status == 'waiting',
+              f'R6-e defer-er 상태 waiting (실제 {r2_after.status})')
+        check(r2_after.run_order == 4,
+              f'R6-f defer-er run_order 4 (실제 {r2_after.run_order})')
+
+
 def main():
     reset_db()
     from app import app
@@ -267,6 +338,7 @@ def main():
         test_r3_double_active_detection(app, db, Runner)
         test_r4_repeated_defer(app, db, Runner)
         test_r5_stale_session(app, db, Runner)
+        test_r6_self_defer_over_skipped(app, db, Runner)
     except Exception as e:
         import traceback
         print(f'\n[FATAL]\n{traceback.format_exc()}')

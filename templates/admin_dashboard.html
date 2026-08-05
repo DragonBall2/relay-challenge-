@@ -164,49 +164,9 @@
             각 행의 "📋 안내 메시지" 버튼으로 개별 주자에게 보낼 메시지를 복사할 수 있습니다.
           </span>
         </div>
+        <!-- 내용은 모달 열 때마다 /admin/api/active-runners 에서 fetch (관리자 액션 후 최신 상태 반영) -->
         <div id="active-runners-list">
-          {% set active_list = [] %}
-          {% for group in groups %}
-            {% for r in grouped[group.id] %}
-              {% if r.status == 'active' %}
-                {% set _ = active_list.append({'group': group.name, 'name': r.name, 'knox_id': r.knox_id, 'password': r.password or ''}) %}
-              {% endif %}
-            {% endfor %}
-          {% endfor %}
-          {% if active_list %}
-            <table class="table table-sm" style="font-size: 0.9rem;">
-              <thead>
-                <tr>
-                  <th>조</th>
-                  <th>이름</th>
-                  <th>아이디</th>
-                  <th>비밀번호</th>
-                  <th style="width: 130px;">안내 메시지</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for r in active_list %}
-                <tr>
-                  <td>{{ r.group }}</td>
-                  <td>{{ r.name }}</td>
-                  <td><code>{{ r.knox_id }}</code></td>
-                  <td><code style="font-weight: 600;">{{ r.password }}</code></td>
-                  <td>
-                    <button type="button"
-                            class="btn btn-outline-primary btn-sm js-copy-runner-msg"
-                            data-name="{{ r.name }}"
-                            data-knox-id="{{ r.knox_id }}"
-                            data-password="{{ r.password }}">📋 안내 메시지</button>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          {% else %}
-            <p style="color: var(--text-secondary); text-align: center; padding: 1.5rem 0;">
-              현재 진행 중인(active) 주자가 없습니다.
-            </p>
-          {% endif %}
+          <p style="color: var(--text-secondary); text-align: center; padding: 1.5rem 0;">불러오는 중...</p>
         </div>
       </div>
     </div>
@@ -595,29 +555,77 @@
         document.body.removeChild(ta);
     }
 
+    const activeListContainer = document.getElementById('active-runners-list');
+    const activeCountEl = document.getElementById('active-runners-count');
+    let activeRunnersCache = [];
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+
+    function renderActiveRunners(runners) {
+        activeRunnersCache = runners;
+        activeCountEl.textContent = '· ' + runners.length + '명';
+        if (runners.length === 0) {
+            activeListContainer.innerHTML =
+                '<p style="color: var(--text-secondary); text-align: center; padding: 1.5rem 0;">' +
+                '현재 진행 중인(active) 주자가 없습니다.</p>';
+            return;
+        }
+        let html = '<table class="table table-sm" style="font-size: 0.9rem;">' +
+            '<thead><tr><th>조</th><th>이름</th><th>아이디</th><th>비밀번호</th>' +
+            '<th style="width: 130px;">안내 메시지</th></tr></thead><tbody>';
+        for (const r of runners) {
+            html += '<tr>' +
+                '<td>' + escapeHtml(r.group) + '</td>' +
+                '<td>' + escapeHtml(r.name) + '</td>' +
+                '<td><code>' + escapeHtml(r.knox_id) + '</code></td>' +
+                '<td><code style="font-weight: 600;">' + escapeHtml(r.password) + '</code></td>' +
+                '<td><button type="button" class="btn btn-outline-primary btn-sm js-copy-runner-msg"' +
+                ' data-name="' + escapeHtml(r.name) + '"' +
+                ' data-knox-id="' + escapeHtml(r.knox_id) + '"' +
+                ' data-password="' + escapeHtml(r.password) + '">📋 안내 메시지</button></td>' +
+                '</tr>';
+        }
+        html += '</tbody></table>';
+        activeListContainer.innerHTML = html;
+    }
+
+    async function loadActiveRunners() {
+        activeListContainer.innerHTML =
+            '<p style="color: var(--text-secondary); text-align: center; padding: 1.5rem 0;">불러오는 중...</p>';
+        activeCountEl.textContent = '';
+        try {
+            const res = await fetch('{{ url_for("admin_api_active_runners") }}', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            renderActiveRunners(data.runners || []);
+        } catch (e) {
+            activeListContainer.innerHTML =
+                '<p style="color: var(--danger, #ef4444); text-align: center; padding: 1.5rem 0;">' +
+                '로드 실패: ' + escapeHtml(e.message) + '</p>';
+        }
+    }
+
     document.getElementById('btn-view-active').addEventListener('click', () => {
-        // 모달 열 때 카운트 갱신
-        const rows = document.querySelectorAll('#active-runners-list tbody tr');
-        const countEl = document.getElementById('active-runners-count');
-        countEl.textContent = '· ' + rows.length + '명';
         activeRunnersModal.show();
+        loadActiveRunners();   // 모달 열 때마다 최신 상태 fetch
     });
 
     document.getElementById('btn-copy-active-list').addEventListener('click', (ev) => {
-        const rows = document.querySelectorAll('#active-runners-list tbody tr');
-        if (rows.length === 0) {
+        if (activeRunnersCache.length === 0) {
             alert('진행 중인 주자가 없습니다.');
             return;
         }
         const lines = ['[현재 진행 중인 주자]'];
-        rows.forEach(tr => {
-            const tds = tr.querySelectorAll('td');
-            const group = tds[0].textContent.trim();
-            const name = tds[1].textContent.trim();
-            const knox = tds[2].textContent.trim();
-            const pw = tds[3].textContent.trim();
-            lines.push(`${group} | ${name} (${knox}) | ${pw}`);
-        });
+        for (const r of activeRunnersCache) {
+            lines.push(`${r.group} | ${r.name} (${r.knox_id}) | ${r.password}`);
+        }
         copyText(lines.join('\n'), ev.currentTarget);
     });
 
